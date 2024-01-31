@@ -1,13 +1,17 @@
 #pragma once
 
 #include "libraries.hpp"
-#include <list>
+#include "image.hpp"
+#include "resourceScope.hpp"
+
+#include <chrono>
 
 namespace ignis {
 
 class IEngine {
 protected:
-    std::list<std::function<void()>> m_deferredCleanupCommands;
+    ResourceScope m_globalResourceScope;
+    ResourceScope& getGlobalResourceScope() { return m_globalResourceScope; }
 
     GLFWwindow* m_window;
     VmaAllocator m_allocator;
@@ -37,8 +41,7 @@ protected:
     vk::SurfaceKHR     getSurface()        const { return { m_surface }; }
     vk::SwapchainKHR   getSwapchain()      const { return { m_swapchain }; }
 
-    std::vector<vk::Image>     m_swapchainImages;
-    std::vector<vk::ImageView> m_swapchainImageViews;
+    std::vector<Image> m_swapchainImages;
 
     vk::DispatchLoaderDynamic m_dispatchLoaderDynamic;
 
@@ -62,35 +65,32 @@ protected:
 
     void init();
     void draw();
-    void executeDeferredCleanup();
+
+    std::chrono::high_resolution_clock::time_point m_startTime;
+    std::chrono::high_resolution_clock::time_point m_currentFrameStartTime;
 
     std::list<double>    m_lastNDeltaTimes;
     double               m_deltaTimeSum;
     static constexpr int s_deltaTimeSampleCount = 10;
 
     void   registerDeltaTime(double deltaTime);
-
-public:
-    void mainLoop();
+    double getDeltaTime() const;
+    double getTime() const;
 
     std::string getEngineName()    { return "Ignis"; };
     uint32_t    getEngineVersion() { return VK_MAKE_API_VERSION(0, 1, 0, 0); }
-
-    double getDeltaTime() const;
-
-    void addDeferredCleanupCommand(std::function<void()> command) {
-        m_deferredCleanupCommands.push_back(command);
-    }
 
     virtual std::string getName()       = 0;
     virtual uint32_t    getAppVersion() = 0;
 
     virtual glm::ivec2 getInitialWindowSize() { return { 1280, 720 }; }
 
-protected:
     virtual void setup() = 0;
     virtual void update(double deltaTime) = 0;
     virtual void recordDrawCommands(vk::CommandBuffer cmd) = 0;
+
+public:
+    void mainLoop();
 
 };
 

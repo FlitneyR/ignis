@@ -23,7 +23,9 @@ find_package(glfw3 CONFIG REQUIRED)
 
 add_library(engine
     private/engine.cpp
-    private/pipelineBuilder.cpp)
+    private/resourceScope.cpp
+    private/pipelineBuilder.cpp
+    private/image.cpp)
 
 target_link_libraries(engine PUBLIC Vulkan::Vulkan vk-bootstrap::vk-bootstrap glfw VulkanMemoryAllocator)
 target_include_directories(engine PUBLIC public)
