@@ -13,8 +13,6 @@ public:
     void main();
 
     static IEngine& getSingleton();
-    ResourceScope& getGlobalResourceScope() { return m_globalResourceScope; }
-    vk::DispatchLoaderDynamic& getDynamicDispatchLoader() { return m_dispatchLoaderDynamic; }
 
     VmaAllocator       getAllocator()      const { return m_allocator; }
     vk::Instance       getInstance()       const { return { m_instance }; }
@@ -22,6 +20,10 @@ public:
     vk::Device         getDevice()         const { return { m_device }; }
     vk::SurfaceKHR     getSurface()        const { return { m_surface }; }
     vk::SwapchainKHR   getSwapchain()      const { return { m_swapchain }; }
+    uint32_t           getInFlightIndex()  const { return m_inFlightFrameIndex; }
+
+    ResourceScope&             getGlobalResourceScope()   { return m_globalResourceScope; }
+    vk::DispatchLoaderDynamic& getDynamicDispatchLoader() { return m_dispatchLoaderDynamic; }
 
 protected:
     IEngine();
@@ -36,10 +38,10 @@ protected:
     virtual void update(double deltaTime) = 0;
     virtual void recordDrawCommands(vk::CommandBuffer cmd) = 0;
 
+    IEngine(IEngine&& other) = delete;
     IEngine(const IEngine& other) = delete;
-    IEngine(const IEngine&& other) = delete;
+    IEngine& operator =(IEngine&& other) = delete;
     IEngine& operator =(const IEngine& other) = delete;
-    IEngine& operator =(const IEngine&& other) = delete;
 
     ResourceScope m_globalResourceScope;
     GLFWwindow* m_window;
@@ -63,7 +65,9 @@ protected:
     vk::CommandPool m_presentCmdPool;
     vk::CommandPool m_computeCmdPool;
 
-    std::vector<Image> m_swapchainImages;
+    Allocated<Image>           m_depthImage;
+    vk::ImageView              m_depthImageView;
+    std::vector<Image>         m_swapchainImages;
     std::vector<vk::ImageView> m_swapchainImageViews;
 
     vk::DispatchLoaderDynamic m_dispatchLoaderDynamic;

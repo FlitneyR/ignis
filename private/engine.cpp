@@ -1,4 +1,5 @@
 #include "engine.hpp"
+#include "common.hpp"
 #include <iostream>
 
 namespace ignis {
@@ -75,17 +76,15 @@ void IEngine::init() {
         glfwDestroyWindow(m_window);
     });
 
-    vkb::Result<vkb::Instance> instance_result = vkb::InstanceBuilder {}
+    m_instance = getValue(vkb::InstanceBuilder {}
         .set_app_name(getName().c_str())
         .set_engine_name(getEngineName().c_str())
         .set_app_version(getAppVersion())
         .set_engine_version(getEngineVersion())
         .request_validation_layers()
         .use_default_debug_messenger()
-        .build();
+        .build(), "Failed to create a vulkan instance");
     
-    if (!instance_result) throw std::runtime_error("Failed to create a vulkan instance");
-    m_instance = instance_result.value();
     grs.addDeferredCleanupFunction([&]() {
         vkb::destroy_instance(m_instance);
     });
@@ -96,7 +95,7 @@ void IEngine::init() {
         getInstance().destroySurfaceKHR(m_surface);
     });
 
-    vkb::Result<vkb::PhysicalDevice> phys_device_result = vkb::PhysicalDeviceSelector { m_instance }
+    m_phys_device = getValue(vkb::PhysicalDeviceSelector { m_instance }
         .set_surface(m_surface)
         .set_minimum_version(1, 2)
         .add_required_extensions({
@@ -106,21 +105,15 @@ void IEngine::init() {
             "VK_KHR_multiview",
             "VK_KHR_maintenance2"
         })
-        .select();
-    
-    if (!phys_device_result) throw std::runtime_error("Failed to select a physical device");
-
-    m_phys_device = phys_device_result.value();
+        .select(), "Failed to select a physical device");
 
     auto dynamicRenderingFeatures = vk::PhysicalDeviceDynamicRenderingFeatures {}
         .setDynamicRendering(true);
 
-    vkb::Result<vkb::Device> device_result = vkb::DeviceBuilder { m_phys_device }
+    m_device = getValue(vkb::DeviceBuilder { m_phys_device }
         .add_pNext(&dynamicRenderingFeatures)
-        .build();
+        .build(), "Failed to create a logical device");
     
-    if (!device_result) throw std::runtime_error("Failed to create a logical device");
-    m_device = device_result.value();
     grs.addDeferredCleanupFunction([&]() {
         vkb::destroy_device(m_device);
     });
@@ -135,50 +128,35 @@ void IEngine::init() {
         vmaDestroyAllocator(getAllocator());
     });
     
-    vkb::Result<VkQueue> graphics_queue_result = m_device.get_queue(vkb::QueueType::graphics);
-    vkb::Result<VkQueue> present_queue_result = m_device.get_queue(vkb::QueueType::present);
-    // vkb::Result<VkQueue> compute_queue_result = m_device.get_queue(vkb::QueueType::compute);
-    
-    if (!graphics_queue_result) throw std::runtime_error("Failed to find a graphics queue");
-    if (!present_queue_result) throw std::runtime_error("Failed to find a present queue");
-    // if (!compute_queue_result) throw std::runtime_error("Failed to find a compute queue");
-
-    m_graphicsQueue = graphics_queue_result.value();
-    m_presentQueue = present_queue_result.value();
-    // m_computeQueue = compute_queue_result.value();
+    m_graphicsQueue = getValue(m_device.get_queue(vkb::QueueType::graphics), "Failed to find a graphics queue");
+    m_presentQueue = getValue(m_device.get_queue(vkb::QueueType::present), "Failed to find a present queue");
 
     m_graphicsQueueIndex = m_device.get_queue_index(vkb::QueueType::graphics).value();
     m_presentQueueIndex = m_device.get_queue_index(vkb::QueueType::present).value();
-    // m_computeQueueIndex = m_device.get_queue_index(vkb::QueueType::compute).value();
 
-    vkb::Result<vkb::Swapchain> swapchain_result = vkb::SwapchainBuilder {
+    m_swapchain = getValue(vkb::SwapchainBuilder {
             getPhysicalDevice(),
             getDevice(),
             getSurface(),
             m_graphicsQueueIndex,
             m_presentQueueIndex
         }
-        .build();
+        .build(), "Failed to create a swapchain");
     
-    if (!swapchain_result) throw std::runtime_error("Failed to create a swapchain");
-    m_swapchain = swapchain_result.value();
     grs.addDeferredCleanupFunction([&]() {
         vkb::destroy_swapchain(m_swapchain);
     });
 
-    auto swapchainImages_result = m_swapchain.get_images();
-    auto swapchainImageViews_result = m_swapchain.get_image_views();
-
-    if (!swapchainImages_result) throw std::runtime_error("Failed to get swapchain images");
-    if (!swapchainImageViews_result) throw std::runtime_error("Failed to get swapchain image views");
+    auto swapchainImages = getValue(m_swapchain.get_images(), "Failed to get swapchain images");
+    auto swapchainImageViews = getValue(m_swapchain.get_image_views(), "Failed to get swapchain image views");
 
     for (int i = 0; i < m_swapchain.image_count; i++) {
         m_swapchainImages.push_back(Image {
-            vk::Image { swapchainImages_result.value()[i] },
+            vk::Image { swapchainImages[i] },
             static_cast<vk::Format>(m_swapchain.image_format),
             { 1280, 720, 1 }
         });
-        m_swapchainImageViews.push_back(swapchainImageViews_result.value()[i]);
+        m_swapchainImageViews.push_back(swapchainImageViews[i]);
     }
 
     grs.addDeferredCleanupFunction([&]() {
@@ -186,12 +164,10 @@ void IEngine::init() {
     });
 
     m_graphicsCmdPool = getDevice().createCommandPool(vk::CommandPoolCreateInfo {}.setQueueFamilyIndex(m_graphicsQueueIndex));
-    // m_computeCmdPool = getDevice().createCommandPool(vk::CommandPoolCreateInfo {}.setQueueFamilyIndex(m_computeQueueIndex));
     m_presentCmdPool = getDevice().createCommandPool(vk::CommandPoolCreateInfo {}.setQueueFamilyIndex(m_presentQueueIndex));
 
     grs.addDeferredCleanupFunction([&]() {
         getDevice().destroyCommandPool(m_presentCmdPool);
-        // getDevice().destroyCommandPool(m_computeCmdPool);
         getDevice().destroyCommandPool(m_graphicsCmdPool);
     });
     
@@ -207,6 +183,16 @@ void IEngine::init() {
         for (auto& semaphore : m_renderingFinishedSemaphores) getDevice().destroySemaphore(semaphore);
         for (auto& fence     : m_frameFinishedFences)         getDevice().destroyFence(fence);
     });
+
+    m_depthImage = ImageBuilder { getDevice(), getAllocator(), getGlobalResourceScope() }
+        .setFormat(vk::Format::eD32Sfloat)
+        .setUsage(vk::ImageUsageFlagBits::eDepthStencilAttachment)
+        .setSize({ 1280, 720 })
+        .build();
+
+    m_depthImageView = ImageViewBuilder { getDevice(), *m_depthImage, getGlobalResourceScope() }
+        .setAspectMask(vk::ImageAspectFlagBits::eDepth)
+        .build();
 
     m_dispatchLoaderDynamic = vk::DispatchLoaderDynamic { getInstance(), vkGetInstanceProcAddr, getDevice(), vkGetDeviceProcAddr };
 }
@@ -236,12 +222,15 @@ double IEngine::getTime() const {
 }
 
 void IEngine::draw() {
-    vk::resultCheck(getDevice().waitForFences(m_frameFinishedFences[m_inFlightFrameIndex], true, UINT64_MAX),
-        "Frame finished fence timed out");
+    vk::Fence frameFinishedFence = m_frameFinishedFences[getInFlightIndex()];
+    vk::Semaphore imageAcquiredSemaphore = m_imageAcquiredSemaphores[getInFlightIndex()];
+    vk::Semaphore renderingFinishedSemaphore = m_renderingFinishedSemaphores[getInFlightIndex()];
 
-    getDevice().resetFences(m_frameFinishedFences[m_inFlightFrameIndex]);
+    vk::resultCheck(getDevice().waitForFences(frameFinishedFence, true, UINT64_MAX), "Frame finished fence timed out");
 
-    vk::ResultValue<uint32_t> imageIndex = getDevice().acquireNextImageKHR(getSwapchain(), UINT64_MAX, m_imageAcquiredSemaphores[m_inFlightFrameIndex], nullptr);
+    getDevice().resetFences(frameFinishedFence);
+
+    vk::ResultValue<uint32_t> imageIndex = getDevice().acquireNextImageKHR(getSwapchain(), UINT64_MAX, imageAcquiredSemaphore, nullptr);
     vk::resultCheck(imageIndex.result, "Failed to acquire next image");
 
     vk::CommandBuffer cmd = getDevice().allocateCommandBuffers(vk::CommandBufferAllocateInfo {}
@@ -257,7 +246,7 @@ void IEngine::draw() {
         .setNewLayout(vk::ImageLayout::eColorAttachmentOptimal)
         .execute(cmd);
 
-    auto colorAttachment = vk::RenderingAttachmentInfoKHR {}
+    auto colorAttachment = vk::RenderingAttachmentInfo {}
         .setImageView(m_swapchainImageViews[imageIndex.value])
         .setImageLayout(vk::ImageLayout::eColorAttachmentOptimal)
         .setClearValue(vk::ClearValue {})
@@ -265,8 +254,17 @@ void IEngine::draw() {
         .setLoadOp(vk::AttachmentLoadOp::eClear)
         ;
 
+    auto depthAttachment = vk::RenderingAttachmentInfo {}
+        .setImageView(m_depthImageView)
+        .setImageLayout(vk::ImageLayout::eDepthStencilAttachmentOptimal)
+        .setClearValue(vk::ClearValue {}.setDepthStencil({ 1.0f }))
+        .setStoreOp(vk::AttachmentStoreOp::eStore)
+        .setLoadOp(vk::AttachmentLoadOp::eClear)
+        ;
+
     cmd.beginRendering(vk::RenderingInfo {}
         .setColorAttachments(colorAttachment)
+        .setPDepthAttachment(&depthAttachment)
         .setLayerCount(1)
         .setRenderArea({ { 0, 0 }, { 1280, 720 } }),
         m_dispatchLoaderDynamic);
@@ -275,6 +273,7 @@ void IEngine::draw() {
         .setX(0).setY(0)
         .setWidth(1280).setHeight(720)
         .setMinDepth(0).setMaxDepth(1));
+    
     recordDrawCommands(cmd);
     
     cmd.endRendering(m_dispatchLoaderDynamic);
@@ -292,15 +291,15 @@ void IEngine::draw() {
     getQueue(vkb::QueueType::graphics).submit(vk::SubmitInfo {}
         .setCommandBuffers(cmd)
         .setWaitDstStageMask(waitDstStageMask)
-        .setWaitSemaphores(m_imageAcquiredSemaphores[m_inFlightFrameIndex])
-        .setSignalSemaphores(m_renderingFinishedSemaphores[m_inFlightFrameIndex]),
-        m_frameFinishedFences[m_inFlightFrameIndex]);
+        .setWaitSemaphores(imageAcquiredSemaphore)
+        .setSignalSemaphores(renderingFinishedSemaphore),
+        frameFinishedFence);
 
     vk::SwapchainKHR swapchain = getSwapchain();
     vk::resultCheck(getQueue(vkb::QueueType::present).presentKHR(vk::PresentInfoKHR {}
         .setImageIndices(imageIndex.value)
         .setSwapchains(swapchain)
-        .setWaitSemaphores(m_renderingFinishedSemaphores[m_inFlightFrameIndex])),
+        .setWaitSemaphores(renderingFinishedSemaphore)),
         "Failed to present rendered image");
 
     m_inFlightFrameIndex = (m_inFlightFrameIndex + 1) % s_framesInFlight;
