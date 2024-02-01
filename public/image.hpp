@@ -2,6 +2,7 @@
 
 #include "libraries.hpp"
 #include "builder.hpp"
+#include "allocated.hpp"
 
 namespace ignis {
 
@@ -40,13 +41,15 @@ class Image {
 
     std::vector<vk::ImageLayout> m_imageLayouts;
 
-public:
-    const vk::Image     m_image;
-    const vk::Format    m_format;
-    const uint32_t      m_mipLevelCount;
-    const uint32_t      m_arrayLayerCount;
-    const vk::Extent3D  m_extent;
+    vk::Image     m_image;
+    vk::Format    m_format;
+    uint32_t      m_mipLevelCount;
+    uint32_t      m_arrayLayerCount;
+    vk::Extent3D  m_extent;
     std::optional<VmaAllocation> m_allocation;
+
+public:
+    Image() = default;
 
     Image(
         vk::Image                    image,
@@ -54,9 +57,20 @@ public:
         vk::Extent3D                 extent,
         uint32_t                     mipLevelCount = 1,
         uint32_t                     arrayLayerCount = 1,
-        std::optional<VmaAllocation> allocation = {},
         vk::ImageLayout              initialLayout = vk::ImageLayout::eUndefined
     );
+
+    Image(Image&& other) = default;
+    Image& operator =(Image&& other) = default;
+    
+    Image(const Image& other) = delete;
+    Image& operator =(const Image& other) = delete;
+
+    vk::Image                    getImage()           { return m_image; }
+    vk::Format                   getFormat()          { return m_format; }
+    uint32_t                     getMipLevelCount()   { return m_mipLevelCount; }
+    uint32_t                     getArrayLayerCount() { return m_arrayLayerCount; }
+    vk::Extent3D                 getExtent()          { return m_extent; }
 
     ImageLayoutTransition transitionLayout(
         uint32_t baseMipLevel = 0,
@@ -67,17 +81,18 @@ public:
     vk::ImageLayout& layoutAt(uint32_t mipLevel = 0, uint32_t arrayLayer = 0);
 };
 
-class ImageBuilder : public IBuilder<Image> {
+class ImageBuilder : public IBuilder<Allocated<Image>> {
     VmaAllocator    m_allocator;
 
 public:
-    uint32_t              m_mipLevelCount;
-    uint32_t              m_arrayLayerCount;
-    vk::Format            m_format;
-    vk::ImageUsageFlags   m_usage;
-    std::vector<uint32_t> m_queueFamilyIndices;
-    vk::Extent3D          m_extent;
-    vk::ImageType         m_imageType;
+    uint32_t              m_mipLevelCount      = 1;
+    uint32_t              m_arrayLayerCount    = 1;
+    vk::Format            m_format             = vk::Format::eR8G8B8A8Srgb;
+    vk::ImageUsageFlags   m_usage              = vk::ImageUsageFlagBits::eSampled;
+    std::vector<uint32_t> m_queueFamilyIndices = {};
+    vk::Extent3D          m_extent             = { 1, 1, 1 };
+    vk::ImageType         m_imageType          = vk::ImageType::e2D;
+    VmaMemoryUsage        m_memoryUsage        = VMA_MEMORY_USAGE_GPU_ONLY;
 
     ImageBuilder(vk::Device device, VmaAllocator allocator, ResourceScope& scope);
 
@@ -91,7 +106,7 @@ public:
     ImageBuilder& setSize(glm::ivec3 size);
     ImageBuilder& setImageType(vk::ImageType type);
 
-    Image build() override;
+    Allocated<Image> build() override;
 };
 
 class ImageViewBuilder : public IBuilder<vk::ImageView> {
