@@ -6,6 +6,10 @@
 
 namespace ignis {
 
+/**
+ * @brief Collects cleanup commands via void addDeferredCleanuFunction(std::function<void()> func),
+ *        then later executes those commands in reverse via void executeDeferredCleanupFunctions()
+ */
 class ResourceScope {
     std::list<std::function<void()>> m_deferredCleanupCommands;
 

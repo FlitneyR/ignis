@@ -4,6 +4,9 @@
 
 namespace ignis {
 
+/**
+ * @brief Wrapper for a resource of type `Inner` to store data related to VMA allocations
+ */
 template<typename Inner>
 struct Allocated {
     Inner m_inner;
