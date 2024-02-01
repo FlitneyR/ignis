@@ -9,10 +9,10 @@ namespace ignis {
 class ResourceScope {
     std::list<std::function<void()>> m_deferredCleanupCommands;
 
+    ResourceScope(ResourceScope&& other) = delete;
     ResourceScope(const ResourceScope& other) = delete;
-    ResourceScope(const ResourceScope&& other) = delete;
+    ResourceScope& operator =(ResourceScope&& other) = delete;
     ResourceScope& operator =(const ResourceScope& other) = delete;
-    ResourceScope& operator =(const ResourceScope&& other) = delete;
 
 public:
     ResourceScope();
