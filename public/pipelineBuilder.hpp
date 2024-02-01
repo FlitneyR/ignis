@@ -2,23 +2,20 @@
 
 #include "libraries.hpp"
 #include "resourceScope.hpp"
+#include "builder.hpp"
 #include <optional>
 
 namespace ignis {
 
-class PipelineLayoutBuilder {
-    vk::Device m_device;
-
+class PipelineLayoutBuilder : IBuilder<vk::PipelineLayout> {
 public:
     std::vector<vk::DescriptorSetLayout> m_setLayouts {};
     std::vector<vk::PushConstantRange> m_pushConstantRanges {};
 
-    PipelineLayoutBuilder(vk::Device device);
+    PipelineLayoutBuilder(vk::Device device, ResourceScope* scope = nullptr);
 
     PipelineLayoutBuilder& addSet(vk::DescriptorSetLayout setLayout);
     PipelineLayoutBuilder& addPushConstantRange(vk::PushConstantRange pcRange);
-
-    vk::ShaderModule loadShaderModule(const char* filename);
 
     vk::PipelineLayout build();
 };
@@ -29,19 +26,16 @@ struct PipelineData {
     vk::PipelineLayout pipelineLayout;
 };
 
-class IPipelineBuilder {
+class IPipelineBuilder : public IBuilder<vk::ResultValue<PipelineData>> {
 protected:
-    vk::Device m_device;
     vk::PipelineLayout m_layout;
     std::vector<vk::ShaderModule> m_modules;
 
 public:
-    IPipelineBuilder(vk::Device device);
-    IPipelineBuilder(vk::Device device, vk::PipelineLayout layout);
+    IPipelineBuilder(vk::Device device, ResourceScope* scope = nullptr);
+    IPipelineBuilder(vk::Device device, vk::PipelineLayout layout, ResourceScope* scope = nullptr);
 
     vk::ShaderModule loadShaderModule(const char* filename);
-
-    virtual vk::ResultValue<PipelineData> build() = 0;
 };
 
 class ComputePipelineBuilder : public IPipelineBuilder {
@@ -49,8 +43,8 @@ public:
     std::string m_functionName;
     vk::ShaderModule m_shaderModule;
 
-    ComputePipelineBuilder(vk::Device device);
-    ComputePipelineBuilder(vk::Device device, vk::PipelineLayout layout);
+    ComputePipelineBuilder(vk::Device device, ResourceScope* scope = nullptr);
+    ComputePipelineBuilder(vk::Device device, vk::PipelineLayout layout, ResourceScope* scope = nullptr);
 
     ComputePipelineBuilder& setPipelineLayout(vk::PipelineLayout pipelineLayout);
     ComputePipelineBuilder& setShaderModule(vk::ShaderModule shaderModule);
@@ -83,8 +77,8 @@ public:
     vk::PipelineViewportStateCreateInfo m_viewportState {};
     std::vector<vk::PipelineShaderStageCreateInfo> m_stages {};
 
-    GraphicsPipelineBuilder(vk::Device device);
-    GraphicsPipelineBuilder(vk::Device device, vk::PipelineLayout);
+    GraphicsPipelineBuilder(vk::Device device, ResourceScope* scope = nullptr);
+    GraphicsPipelineBuilder(vk::Device device, vk::PipelineLayout, ResourceScope* scope = nullptr);
 
     static vk::PipelineColorBlendAttachmentState defaultAttachmentBlendState();
 

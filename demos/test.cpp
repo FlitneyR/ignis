@@ -12,7 +12,6 @@ class Test final : public ignis::IEngine {
     VmaAllocation m_vertexBufferAllocation;
 
     vk::Pipeline m_pipeline;
-    vk::PipelineLayout m_pipelineLayout;
 
     std::vector<Vertex> m_vertices {
         { {  0.0f, -0.5f, 0.0f }, { 1.0f, 0.0f, 0.0f, 1.0f } },
@@ -47,13 +46,11 @@ class Test final : public ignis::IEngine {
         std::memcpy(p_data, m_vertices.data(), sizeof(Vertex) * m_vertices.size());
         getDevice().unmapMemory(vbInfo.deviceMemory);
 
-        m_pipelineLayout = ignis::PipelineLayoutBuilder { getDevice() }
-            .build();
-        grs.addDeferredCleanupFunction([&]() {
-            getDevice().destroyPipelineLayout(m_pipelineLayout);
-        });
-
-        auto pipeline_result = ignis::GraphicsPipelineBuilder { getDevice(), m_pipelineLayout }
+        auto pipeline_result = ignis::GraphicsPipelineBuilder {
+            getDevice(),
+            ignis::PipelineLayoutBuilder { getDevice(), &getGlobalResourceScope() }.build(),
+            &getGlobalResourceScope()
+        }
             .addVertexBinding(vk::VertexInputBindingDescription {}
                 .setBinding(0).setInputRate(vk::VertexInputRate::eVertex).setStride(sizeof(Vertex)))
             
@@ -75,12 +72,6 @@ class Test final : public ignis::IEngine {
             .build();
         vk::resultCheck(pipeline_result.result, "Failed to create pipeline");
         m_pipeline = pipeline_result.value.pipeline;
-
-        grs.addDeferredCleanupFunction([&, pipeline_result]() {
-            getDevice().destroyPipeline(m_pipeline);
-            for (auto& shaderModule : pipeline_result.value.shaderModules)
-                getDevice().destroyShaderModule(shaderModule);
-        });
     }
     
     void recordDrawCommands(vk::CommandBuffer cmd) {
