@@ -74,15 +74,21 @@ public:
     GraphicsPipelineBuilder(vk::Device device, ResourceScope& scope);
     GraphicsPipelineBuilder(vk::Device device, vk::PipelineLayout, ResourceScope& scope);
 
-    static vk::PipelineColorBlendAttachmentState defaultAttachmentBlendState();
+    static vk::PipelineColorBlendAttachmentState   defaultAttachmentBlendState();
+    static vk::PipelineDepthStencilStateCreateInfo defaultDepthStencilState();
 
     GraphicsPipelineBuilder& useDefaults();
 
     GraphicsPipelineBuilder& setPipelineLayout(vk::PipelineLayout pl);
     GraphicsPipelineBuilder& addDynamicState(vk::DynamicState ds);
     GraphicsPipelineBuilder& setVertexInputState(vk::PipelineVertexInputStateCreateInfo vis);
-    GraphicsPipelineBuilder& addVertexAttribute(vk::VertexInputAttributeDescription attribute);
     GraphicsPipelineBuilder& addVertexBinding(vk::VertexInputBindingDescription binding);
+    GraphicsPipelineBuilder& addVertexBinding(uint32_t binding, uint32_t stride, vk::VertexInputRate inputRate = vk::VertexInputRate::eVertex);
+    GraphicsPipelineBuilder& addInstanceBinding(uint32_t binding, uint32_t stride);
+    GraphicsPipelineBuilder& addVertexAttribute(vk::VertexInputAttributeDescription attribute);
+    GraphicsPipelineBuilder& addVertexAttribute(uint32_t binding, uint32_t location, uint32_t offset, vk::Format format);
+    template<typename T>
+    GraphicsPipelineBuilder& addVertexAttribute(uint32_t binding, uint32_t location, uint32_t offset);
     GraphicsPipelineBuilder& setInputAssemblyState(vk::PipelineInputAssemblyStateCreateInfo ias);
     GraphicsPipelineBuilder& setDepthStencilState(vk::PipelineDepthStencilStateCreateInfo dss);
     GraphicsPipelineBuilder& setTessellationState(std::optional<vk::PipelineTessellationStateCreateInfo> ts);
@@ -94,6 +100,19 @@ public:
     GraphicsPipelineBuilder& addStageFromFile(const char* filename, const char* funcName, vk::ShaderStageFlagBits shaderStage);
     GraphicsPipelineBuilder& setRenderingCreateInfo(vk::PipelineRenderingCreateInfoKHR rci);
     GraphicsPipelineBuilder& addColorAttachmentFormat(vk::Format format);
+    GraphicsPipelineBuilder& setDepthAttachmentFormat(vk::Format format);
+    GraphicsPipelineBuilder& addColorAttachmentFormat(VkFormat format);
+    GraphicsPipelineBuilder& setDepthAttachmentFormat(VkFormat format);
+
+    template<typename T>
+    GraphicsPipelineBuilder& addVertexBinding(uint32_t binding, vk::VertexInputRate inputRate = vk::VertexInputRate::eVertex) {
+        return addVertexBinding(binding, sizeof(T), inputRate);
+    }
+
+    template<typename T>
+    GraphicsPipelineBuilder& addInstanceBinding(uint32_t binding) {
+        return addInstanceBinding(binding, sizeof(T));
+    }
 
     GraphicsPipelineBuilder& modify(std::function<void(GraphicsPipelineBuilder&)> func) { func(*this); return *this; }
 

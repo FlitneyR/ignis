@@ -151,6 +151,13 @@ vk::PipelineColorBlendAttachmentState GraphicsPipelineBuilder::defaultAttachment
         .setDstAlphaBlendFactor(vk::BlendFactor::eZero);
 }
 
+vk::PipelineDepthStencilStateCreateInfo GraphicsPipelineBuilder::defaultDepthStencilState() {
+    return vk::PipelineDepthStencilStateCreateInfo {}
+        .setDepthTestEnable(true)
+        .setDepthCompareOp(vk::CompareOp::eLess)
+        .setDepthWriteEnable(true);
+}
+
 GraphicsPipelineBuilder& GraphicsPipelineBuilder::useDefaults() {
     m_dynamicStates = {};
     m_dynamicStates.push_back(vk::DynamicState::eViewport);
@@ -262,9 +269,63 @@ GraphicsPipelineBuilder& GraphicsPipelineBuilder::addVertexAttribute(vk::VertexI
     return *this;
 }
 
+GraphicsPipelineBuilder& GraphicsPipelineBuilder::addVertexAttribute(uint32_t binding, uint32_t location, uint32_t offset, vk::Format format) {
+    return addVertexAttribute(vk::VertexInputAttributeDescription {}
+        .setBinding(binding)
+        .setLocation(location)
+        .setOffset(offset)
+        .setFormat(format));
+}
+
+template<>
+GraphicsPipelineBuilder& GraphicsPipelineBuilder::addVertexAttribute<float>(uint32_t binding, uint32_t location, uint32_t offset) {
+    return addVertexAttribute(binding, location, offset, vk::Format::eR32Sfloat);
+}
+
+template<>
+GraphicsPipelineBuilder& GraphicsPipelineBuilder::addVertexAttribute<glm::vec2>(uint32_t binding, uint32_t location, uint32_t offset) {
+    return addVertexAttribute(binding, location, offset, vk::Format::eR32G32Sfloat);
+}
+
+template<>
+GraphicsPipelineBuilder& GraphicsPipelineBuilder::addVertexAttribute<glm::vec3>(uint32_t binding, uint32_t location, uint32_t offset) {
+    return addVertexAttribute(binding, location, offset, vk::Format::eR32G32B32Sfloat);
+}
+
+template<>
+GraphicsPipelineBuilder& GraphicsPipelineBuilder::addVertexAttribute<glm::vec4>(uint32_t binding, uint32_t location, uint32_t offset) {
+    return addVertexAttribute(binding, location, offset, vk::Format::eR32G32B32A32Sfloat);
+}
+
+template<>
+GraphicsPipelineBuilder& GraphicsPipelineBuilder::addVertexAttribute<glm::mat3>(uint32_t binding, uint32_t location, uint32_t offset) {
+    return addVertexAttribute<glm::vec3>(binding, location + 0, offset + 0 * sizeof(glm::vec3))
+          .addVertexAttribute<glm::vec3>(binding, location + 1, offset + 1 * sizeof(glm::vec3))
+          .addVertexAttribute<glm::vec3>(binding, location + 2, offset + 2 * sizeof(glm::vec3));
+}
+
+template<>
+GraphicsPipelineBuilder& GraphicsPipelineBuilder::addVertexAttribute<glm::mat4>(uint32_t binding, uint32_t location, uint32_t offset) {
+    return addVertexAttribute<glm::vec4>(binding, location + 0, offset + 0 * sizeof(glm::vec4))
+          .addVertexAttribute<glm::vec4>(binding, location + 1, offset + 1 * sizeof(glm::vec4))
+          .addVertexAttribute<glm::vec4>(binding, location + 2, offset + 2 * sizeof(glm::vec4))
+          .addVertexAttribute<glm::vec4>(binding, location + 3, offset + 3 * sizeof(glm::vec4));
+}
+
 GraphicsPipelineBuilder& GraphicsPipelineBuilder::addVertexBinding(vk::VertexInputBindingDescription binding) {
     m_vertexBindings.push_back(binding);
     return *this;
+}
+
+GraphicsPipelineBuilder& GraphicsPipelineBuilder::addVertexBinding(uint32_t binding, uint32_t stride, vk::VertexInputRate inputRate) {
+    return addVertexBinding(vk::VertexInputBindingDescription {}
+        .setBinding(binding)
+        .setStride(stride)
+        .setInputRate(inputRate));
+}
+
+GraphicsPipelineBuilder& GraphicsPipelineBuilder::addInstanceBinding(uint32_t binding, uint32_t stride) {
+    return addVertexBinding(binding, stride, vk::VertexInputRate::eInstance);
 }
 
 GraphicsPipelineBuilder& GraphicsPipelineBuilder::setInputAssemblyState(vk::PipelineInputAssemblyStateCreateInfo ias) {
@@ -324,6 +385,19 @@ GraphicsPipelineBuilder& GraphicsPipelineBuilder::setRenderingCreateInfo(vk::Pip
 GraphicsPipelineBuilder& GraphicsPipelineBuilder::addColorAttachmentFormat(vk::Format format) {
     m_colorAttachmentFormats.push_back(format);
     return *this;
+}
+
+GraphicsPipelineBuilder& GraphicsPipelineBuilder::setDepthAttachmentFormat(vk::Format format) {
+    m_renderingCreateInfo.setDepthAttachmentFormat(format);
+    return *this;
+}
+
+GraphicsPipelineBuilder& GraphicsPipelineBuilder::addColorAttachmentFormat(VkFormat format) {
+    return addColorAttachmentFormat(static_cast<vk::Format>(format));
+}
+
+GraphicsPipelineBuilder& GraphicsPipelineBuilder::setDepthAttachmentFormat(VkFormat format) {
+    return setDepthAttachmentFormat(static_cast<vk::Format>(format));
 }
 
 }
