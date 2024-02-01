@@ -9,12 +9,12 @@ template<typename Type>
 class IBuilder {
 protected:
     vk::Device m_device;
-    ResourceScope* const m_scope;
+    ResourceScope& m_scope;
 
 public:
     IBuilder(
         vk::Device device,
-        ResourceScope* scope
+        ResourceScope& scope
     ) : m_device(device),
         m_scope(scope)
     {}

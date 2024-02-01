@@ -6,7 +6,7 @@ namespace ignis {
 
 PipelineLayoutBuilder::PipelineLayoutBuilder(
     vk::Device device,
-    ResourceScope* scope
+    ResourceScope& scope
 ) : IBuilder(device, scope)
 {}
 
@@ -30,7 +30,7 @@ vk::PipelineLayout PipelineLayoutBuilder::build() {
         .setPushConstantRanges(m_pushConstantRanges)
         );
     
-    if (m_scope) m_scope->addDeferredCleanupFunction([=, device = m_device]() {
+    m_scope.addDeferredCleanupFunction([=, device = m_device]() {
         device.destroyPipelineLayout(layout);
     });
     
@@ -39,14 +39,14 @@ vk::PipelineLayout PipelineLayoutBuilder::build() {
 
 IPipelineBuilder::IPipelineBuilder(
     vk::Device device,
-    ResourceScope* scope
+    ResourceScope& scope
 ) : IBuilder(device, scope)
 {}
 
 IPipelineBuilder::IPipelineBuilder(
     vk::Device device,
     vk::PipelineLayout layout,
-    ResourceScope* scope
+    ResourceScope& scope
 ) : IBuilder(device, scope),
     m_layout(layout)
 {}
@@ -67,7 +67,7 @@ vk::ShaderModule IPipelineBuilder::loadShaderModule(const char* filename) {
         .setPCode(reinterpret_cast<uint32_t*>(code.data()))
         );
     
-    if (m_scope) m_scope->addDeferredCleanupFunction([=, device = m_device]() {
+    m_scope.addDeferredCleanupFunction([=, device = m_device]() {
         device.destroyShaderModule(shaderModule);
     });
 
@@ -76,14 +76,14 @@ vk::ShaderModule IPipelineBuilder::loadShaderModule(const char* filename) {
 
 ComputePipelineBuilder::ComputePipelineBuilder(
     vk::Device device,
-    ResourceScope* scope
+    ResourceScope& scope
 ) : IPipelineBuilder(device, scope)
 {}
 
 ComputePipelineBuilder::ComputePipelineBuilder(
     vk::Device device,
     vk::PipelineLayout layout,
-    ResourceScope* scope
+    ResourceScope& scope
 ) : IPipelineBuilder(device, layout, scope)
 {}
 
@@ -99,9 +99,7 @@ ComputePipelineBuilder& ComputePipelineBuilder::setFunctionName(const char* func
     return *this;
 }
 
-vk::ResultValue<PipelineData> ComputePipelineBuilder::build() {
-    PipelineData data;
-
+vk::ResultValue<vk::Pipeline> ComputePipelineBuilder::build() {
     auto pipeline_result = m_device.createComputePipeline(nullptr, vk::ComputePipelineCreateInfo {}
         .setLayout(m_layout)
         .setStage(vk::PipelineShaderStageCreateInfo {}
@@ -110,22 +108,18 @@ vk::ResultValue<PipelineData> ComputePipelineBuilder::build() {
             .setStage(vk::ShaderStageFlagBits::eCompute)));
     
     if (pipeline_result.result != vk::Result::eSuccess)
-        vk::ResultValue<PipelineData> { pipeline_result.result, data };
-    
-    data.pipeline = pipeline_result.value;
-    data.pipelineLayout = m_layout;
-    data.shaderModules = m_modules;
+        vk::ResultValue<vk::Pipeline> { pipeline_result.result, VK_NULL_HANDLE };
 
-    if (m_scope) m_scope->addDeferredCleanupFunction([=, device = m_device, pipeline = data.pipeline ] {
+    m_scope.addDeferredCleanupFunction([=, device = m_device, pipeline = pipeline_result.value ] {
         device.destroyPipeline(pipeline);
     });
 
-    return vk::ResultValue<PipelineData> { vk::Result::eSuccess, data };
+    return vk::ResultValue<vk::Pipeline> { vk::Result::eSuccess, pipeline_result.value };
 }
 
 GraphicsPipelineBuilder::GraphicsPipelineBuilder(
     vk::Device device,
-    ResourceScope* scope
+    ResourceScope& scope
 ) : IPipelineBuilder(device, scope)
 {
     useDefaults();
@@ -134,7 +128,7 @@ GraphicsPipelineBuilder::GraphicsPipelineBuilder(
 GraphicsPipelineBuilder::GraphicsPipelineBuilder(
     vk::Device device,
     vk::PipelineLayout pipelineLayout,
-    ResourceScope* scope
+    ResourceScope& scope
 ) : IPipelineBuilder(device, pipelineLayout, scope)
 {
     useDefaults();
@@ -195,7 +189,7 @@ GraphicsPipelineBuilder& GraphicsPipelineBuilder::useDefaults() {
     return *this;
 }
 
-vk::ResultValue<PipelineData> GraphicsPipelineBuilder::build() {
+vk::ResultValue<vk::Pipeline> GraphicsPipelineBuilder::build() {
     m_dynamicState
         .setDynamicStates(m_dynamicStates)
         ;
@@ -232,8 +226,6 @@ vk::ResultValue<PipelineData> GraphicsPipelineBuilder::build() {
         .setPViewportState(&m_viewportState)
         .setPNext(&m_renderingCreateInfo)
         ;
-    
-    PipelineData ret;
 
     vk::ResultValue<vk::Pipeline> pipelineResult = m_device.createGraphicsPipeline(
         VK_NULL_HANDLE,
@@ -241,17 +233,13 @@ vk::ResultValue<PipelineData> GraphicsPipelineBuilder::build() {
     );
 
     if (pipelineResult.result != vk::Result::eSuccess)
-        return vk::ResultValue<PipelineData> { pipelineResult.result, ret };
+        return vk::ResultValue<vk::Pipeline> { pipelineResult.result, VK_NULL_HANDLE };
 
-    ret.pipeline = pipelineResult.value;
-    ret.shaderModules = m_modules;
-    ret.pipelineLayout = m_layout;
-
-    if (m_scope) m_scope->addDeferredCleanupFunction([=, device = m_device, pipeline = ret.pipeline]() {
+    m_scope.addDeferredCleanupFunction([=, device = m_device, pipeline = pipelineResult.value]() {
         device.destroyPipeline(pipeline);
     });
 
-    return vk::ResultValue<PipelineData> { vk::Result::eSuccess, ret };
+    return vk::ResultValue<vk::Pipeline> { vk::Result::eSuccess, pipelineResult.value };
 }
 
 GraphicsPipelineBuilder& GraphicsPipelineBuilder::setPipelineLayout(vk::PipelineLayout pl) {

@@ -9,10 +9,39 @@
 namespace ignis {
 
 class IEngine {
-protected:
-    ResourceScope m_globalResourceScope;
-    ResourceScope& getGlobalResourceScope() { return m_globalResourceScope; }
+public:
+    void main();
 
+    static IEngine& getSingleton();
+    ResourceScope& getGlobalResourceScope() { return m_globalResourceScope; }
+    vk::DispatchLoaderDynamic& getDynamicDispatchLoader() { return m_dispatchLoaderDynamic; }
+
+    VmaAllocator       getAllocator()      const { return m_allocator; }
+    vk::Instance       getInstance()       const { return { m_instance }; }
+    vk::PhysicalDevice getPhysicalDevice() const { return { m_phys_device }; }
+    vk::Device         getDevice()         const { return { m_device }; }
+    vk::SurfaceKHR     getSurface()        const { return { m_surface }; }
+    vk::SwapchainKHR   getSwapchain()      const { return { m_swapchain }; }
+
+protected:
+    IEngine();
+    virtual ~IEngine();
+
+    virtual std::string getName()       = 0;
+    virtual uint32_t    getAppVersion() = 0;
+
+    virtual glm::ivec2 getInitialWindowSize() { return { 1280, 720 }; }
+
+    virtual void setup() = 0;
+    virtual void update(double deltaTime) = 0;
+    virtual void recordDrawCommands(vk::CommandBuffer cmd) = 0;
+
+    IEngine(const IEngine& other) = delete;
+    IEngine(const IEngine&& other) = delete;
+    IEngine& operator =(const IEngine& other) = delete;
+    IEngine& operator =(const IEngine&& other) = delete;
+
+    ResourceScope m_globalResourceScope;
     GLFWwindow* m_window;
     VmaAllocator m_allocator;
 
@@ -34,24 +63,10 @@ protected:
     vk::CommandPool m_presentCmdPool;
     vk::CommandPool m_computeCmdPool;
 
-    VmaAllocator       getAllocator()      const { return m_allocator; }
-    vk::Instance       getInstance()       const { return { m_instance }; }
-    vk::PhysicalDevice getPhysicalDevice() const { return { m_phys_device }; }
-    vk::Device         getDevice()         const { return { m_device }; }
-    vk::SurfaceKHR     getSurface()        const { return { m_surface }; }
-    vk::SwapchainKHR   getSwapchain()      const { return { m_swapchain }; }
-
     std::vector<Image> m_swapchainImages;
+    std::vector<vk::ImageView> m_swapchainImageViews;
 
     vk::DispatchLoaderDynamic m_dispatchLoaderDynamic;
-
-    IEngine();
-    virtual ~IEngine();
-
-    IEngine(const IEngine& other) = delete;
-    IEngine(const IEngine&& other) = delete;
-    IEngine& operator =(const IEngine& other) = delete;
-    IEngine& operator =(const IEngine&& other) = delete;
 
     static constexpr uint8_t s_framesInFlight = 3;
     std::vector<vk::Semaphore> m_imageAcquiredSemaphores;
@@ -80,17 +95,8 @@ protected:
     std::string getEngineName()    { return "Ignis"; };
     uint32_t    getEngineVersion() { return VK_MAKE_API_VERSION(0, 1, 0, 0); }
 
-    virtual std::string getName()       = 0;
-    virtual uint32_t    getAppVersion() = 0;
-
-    virtual glm::ivec2 getInitialWindowSize() { return { 1280, 720 }; }
-
-    virtual void setup() = 0;
-    virtual void update(double deltaTime) = 0;
-    virtual void recordDrawCommands(vk::CommandBuffer cmd) = 0;
-
-public:
-    void mainLoop();
+private:
+    static IEngine* s_singleton;
 
 };
 

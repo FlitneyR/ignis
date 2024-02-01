@@ -12,7 +12,7 @@ public:
     std::vector<vk::DescriptorSetLayout> m_setLayouts {};
     std::vector<vk::PushConstantRange> m_pushConstantRanges {};
 
-    PipelineLayoutBuilder(vk::Device device, ResourceScope* scope = nullptr);
+    PipelineLayoutBuilder(vk::Device device, ResourceScope& scope);
 
     PipelineLayoutBuilder& addSet(vk::DescriptorSetLayout setLayout);
     PipelineLayoutBuilder& addPushConstantRange(vk::PushConstantRange pcRange);
@@ -20,20 +20,14 @@ public:
     vk::PipelineLayout build();
 };
 
-struct PipelineData {
-    std::vector<vk::ShaderModule> shaderModules;
-    vk::Pipeline pipeline;
-    vk::PipelineLayout pipelineLayout;
-};
-
-class IPipelineBuilder : public IBuilder<vk::ResultValue<PipelineData>> {
+class IPipelineBuilder : public IBuilder<vk::ResultValue<vk::Pipeline>> {
 protected:
     vk::PipelineLayout m_layout;
     std::vector<vk::ShaderModule> m_modules;
 
 public:
-    IPipelineBuilder(vk::Device device, ResourceScope* scope = nullptr);
-    IPipelineBuilder(vk::Device device, vk::PipelineLayout layout, ResourceScope* scope = nullptr);
+    IPipelineBuilder(vk::Device device, ResourceScope& scope);
+    IPipelineBuilder(vk::Device device, vk::PipelineLayout layout, ResourceScope& scope);
 
     vk::ShaderModule loadShaderModule(const char* filename);
 };
@@ -43,8 +37,8 @@ public:
     std::string m_functionName;
     vk::ShaderModule m_shaderModule;
 
-    ComputePipelineBuilder(vk::Device device, ResourceScope* scope = nullptr);
-    ComputePipelineBuilder(vk::Device device, vk::PipelineLayout layout, ResourceScope* scope = nullptr);
+    ComputePipelineBuilder(vk::Device device, ResourceScope& scope);
+    ComputePipelineBuilder(vk::Device device, vk::PipelineLayout layout, ResourceScope& scope);
 
     ComputePipelineBuilder& setPipelineLayout(vk::PipelineLayout pipelineLayout);
     ComputePipelineBuilder& setShaderModule(vk::ShaderModule shaderModule);
@@ -53,7 +47,7 @@ public:
 
     ComputePipelineBuilder& modify(std::function<void(ComputePipelineBuilder&)> func) { func(*this); return *this; }
 
-    vk::ResultValue<PipelineData> build() override;
+    vk::ResultValue<vk::Pipeline> build() override;
 };
 
 class GraphicsPipelineBuilder : public IPipelineBuilder {
@@ -77,8 +71,8 @@ public:
     vk::PipelineViewportStateCreateInfo m_viewportState {};
     std::vector<vk::PipelineShaderStageCreateInfo> m_stages {};
 
-    GraphicsPipelineBuilder(vk::Device device, ResourceScope* scope = nullptr);
-    GraphicsPipelineBuilder(vk::Device device, vk::PipelineLayout, ResourceScope* scope = nullptr);
+    GraphicsPipelineBuilder(vk::Device device, ResourceScope& scope);
+    GraphicsPipelineBuilder(vk::Device device, vk::PipelineLayout, ResourceScope& scope);
 
     static vk::PipelineColorBlendAttachmentState defaultAttachmentBlendState();
 
@@ -103,7 +97,7 @@ public:
 
     GraphicsPipelineBuilder& modify(std::function<void(GraphicsPipelineBuilder&)> func) { func(*this); return *this; }
 
-    vk::ResultValue<PipelineData> build() override;
+    vk::ResultValue<vk::Pipeline> build() override;
 };
 
 }

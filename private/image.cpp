@@ -2,6 +2,11 @@
 
 namespace ignis {
 
+ImageLayoutTransition::ImageLayoutTransition(
+    Image& image
+) : r_image(image)
+{}
+
 ImageLayoutTransition& ImageLayoutTransition::setSrcStageMask(vk::PipelineStageFlags mask) {
     m_srcStageMask = mask;
     return *this;
@@ -32,23 +37,17 @@ ImageLayoutTransition& ImageLayoutTransition::setDstAccessMask(vk::AccessFlags m
     return *this;
 }
 
-ImageLayoutTransition& ImageLayoutTransition::setBaseMipLevel(uint32_t level) {
-    m_subResourceRange.setBaseMipLevel(level);
+ImageLayoutTransition& ImageLayoutTransition::setArrayLayerRange(uint32_t base, uint32_t count) {
+    m_subResourceRange
+        .setBaseArrayLayer(base)
+        .setLayerCount(count);
     return *this;
 }
 
-ImageLayoutTransition& ImageLayoutTransition::setMipLevelCount(uint32_t count) {
-    m_subResourceRange.setLevelCount(count);
-    return *this;
-}
-
-ImageLayoutTransition& ImageLayoutTransition::setBaseArrayLayer(uint32_t layer) {
-    m_subResourceRange.setBaseArrayLayer(layer);
-    return *this;
-}
-
-ImageLayoutTransition& ImageLayoutTransition::setArrayLayerCount(uint32_t count) {
-    m_subResourceRange.setLevelCount(count);
+ImageLayoutTransition& ImageLayoutTransition::setMipLevelRange(uint32_t base, uint32_t count) {
+    m_subResourceRange
+        .setBaseMipLevel(base)
+        .setLevelCount(count);
     return *this;
 }
 
@@ -63,7 +62,7 @@ void ImageLayoutTransition::execute(vk::CommandBuffer cmd) {
         m_dstStageMask,
         {}, {}, {},
         vk::ImageMemoryBarrier {}
-            .setImage(m_image.m_image)
+            .setImage(r_image.m_image)
             .setOldLayout(m_oldLayout)
             .setNewLayout(m_newLayout)
             .setSrcAccessMask(m_srcAccessMask)
@@ -78,17 +77,188 @@ void ImageLayoutTransition::execute(vk::CommandBuffer cmd) {
 
     for (uint32_t mipLevel = mipLevelFrom; mipLevel < mipLevelTo; mipLevel++)
     for (uint32_t arrayLayer = arrayLayerFrom; arrayLayer < arrayLayerTo; arrayLayer++) {
-        m_image.imageLayout(mipLevel, arrayLayer) = m_newLayout;
+        r_image.layoutAt(mipLevel, arrayLayer) = m_newLayout;
     }
 }
 
 ImageLayoutTransition Image::transitionLayout(uint32_t baseMipLevel, uint32_t levelCount, uint32_t baseArrayLayer, uint32_t layerCount) {
     return ImageLayoutTransition { *this }
-        .setBaseMipLevel(baseMipLevel)
-        .setMipLevelCount(levelCount)
-        .setBaseArrayLayer(baseArrayLayer)
-        .setArrayLayerCount(layerCount)
-        .setOldLayout(imageLayout(baseMipLevel, baseArrayLayer));
+        .setMipLevelRange(baseMipLevel, levelCount)
+        .setArrayLayerRange(baseArrayLayer, layerCount)
+        .setOldLayout(layoutAt(baseMipLevel, baseArrayLayer));
+}
+
+Image::Image(
+    vk::Image                    image,
+    vk::Format                   format,
+    vk::Extent3D                 extent,
+    uint32_t                     mipLevelCount,
+    uint32_t                     arrayLayerCount,
+    std::optional<VmaAllocation> allocation,
+    vk::ImageLayout              initialLayout
+) : m_image(image),
+    m_format(format),
+    m_extent(extent),
+    m_arrayLayerCount(arrayLayerCount),
+    m_mipLevelCount(mipLevelCount),
+    m_allocation(allocation),
+    m_imageLayouts(mipLevelCount * arrayLayerCount, initialLayout)
+{}
+vk::ImageLayout& Image::layoutAt(uint32_t mipLevel, uint32_t arrayLayer) {
+    return m_imageLayouts[mipLevel + arrayLayer * m_mipLevelCount];
+}
+
+ImageBuilder::ImageBuilder(
+    vk::Device device,
+    VmaAllocator allocator,
+    ResourceScope& scope
+) : IBuilder(device, scope),
+    m_allocator(allocator)
+{}
+
+ImageBuilder& ImageBuilder::setMipLevelCount(uint32_t mipLevelCount) {
+    m_mipLevelCount = mipLevelCount;
+    return *this;
+}
+
+ImageBuilder& ImageBuilder::setArrayLayerCount(uint32_t arrayLayerCount) {
+    m_arrayLayerCount = arrayLayerCount;
+    return *this;
+}
+
+ImageBuilder& ImageBuilder::setFormat(vk::Format format) {
+    m_format = format;
+    return *this;
+}
+
+ImageBuilder& ImageBuilder::setUsage(vk::ImageUsageFlags usage) {
+    m_usage = usage;
+    return *this;
+}
+
+ImageBuilder& ImageBuilder::setQueueFamilyIndices(std::vector<uint32_t> indices) {
+    m_queueFamilyIndices = indices;
+    return *this;
+}
+
+ImageBuilder& ImageBuilder::addQueueFamilyIndex(uint32_t index) {
+    m_queueFamilyIndices.push_back(index);
+    return *this;
+}
+
+ImageBuilder& ImageBuilder::setSize(glm::ivec2 size) {
+    return setSize({ size.x, size.y, 1 });
+}
+
+ImageBuilder& ImageBuilder::setSize(glm::ivec3 size) {
+    m_extent
+        .setWidth(size.x)
+        .setHeight(size.y)
+        .setDepth(size.z);
+    return *this;
+}
+
+ImageBuilder& ImageBuilder::setImageType(vk::ImageType type) {
+    m_imageType = type;
+    return *this;
+}
+
+Image ImageBuilder::build() {
+    VkImageCreateInfo imageCreateInfo = vk::ImageCreateInfo {}
+        .setMipLevels(m_mipLevelCount)
+        .setArrayLayers(m_arrayLayerCount)
+        .setFormat(m_format)
+        .setQueueFamilyIndices(m_queueFamilyIndices)
+        .setUsage(m_usage)
+        .setExtent(m_extent)
+        .setImageType(m_imageType)
+        .setInitialLayout(vk::ImageLayout::eUndefined)
+        .setSamples(vk::SampleCountFlagBits::e1);
+
+    VmaAllocationCreateInfo allocationCreateInfo;
+
+    VkImage image;
+    VmaAllocation allocation;
+    VmaAllocationInfo allocationInfo;
+    vmaCreateImage(m_allocator, &imageCreateInfo, &allocationCreateInfo, &image, &allocation, &allocationInfo);
+
+    m_scope.addDeferredCleanupFunction([=, allocator = m_allocator]() {
+        vmaDestroyImage(allocator, image, allocation);
+    });
+
+    return Image {
+        image,
+        m_format,
+        m_extent,
+        m_mipLevelCount,
+        m_arrayLayerCount,
+        allocation
+    };
+}
+
+ImageViewBuilder::ImageViewBuilder(
+    vk::Device device,
+    Image& image,
+    ResourceScope& scope
+) : IBuilder(device, scope),
+    r_image(image)
+{
+    m_components
+        .setR(vk::ComponentSwizzle::eR)
+        .setG(vk::ComponentSwizzle::eG)
+        .setB(vk::ComponentSwizzle::eB)
+        .setA(vk::ComponentSwizzle::eA);
+    
+    m_arrayLayerCount = image.m_arrayLayerCount;
+    m_mipLevelCount = image.m_mipLevelCount;
+}
+
+ImageViewBuilder& ImageViewBuilder::setComponentMapping(vk::ComponentMapping mapping) {
+    m_components = mapping;
+    return *this;
+}
+
+ImageViewBuilder& ImageViewBuilder::setViewType(vk::ImageViewType viewType) {
+    m_viewType = viewType;
+    return *this;
+}
+
+ImageViewBuilder& ImageViewBuilder::setAspectMask(vk::ImageAspectFlags mask) {
+    m_aspectMask = mask;
+    return *this;
+}
+
+ImageViewBuilder& ImageViewBuilder::setArrayLayerRange(uint32_t base, uint32_t count) {
+    m_baseArrayLayer = base;
+    m_arrayLayerCount = count;
+    return *this;
+}
+
+ImageViewBuilder& ImageViewBuilder::setMipLevelRange(uint32_t base, uint32_t count) {
+    m_baseMipLevel = base;
+    m_mipLevelCount = count;
+    return *this;
+}
+
+vk::ImageView ImageViewBuilder::build() {
+    vk::ImageView imageView = m_device.createImageView(vk::ImageViewCreateInfo {}
+        .setFormat(r_image.m_format)
+        .setImage(r_image.m_image)
+        .setComponents(m_components)
+        .setViewType(m_viewType)
+        .setSubresourceRange(vk::ImageSubresourceRange {}
+            .setAspectMask(m_aspectMask)
+            .setBaseArrayLayer(m_baseArrayLayer)
+            .setBaseMipLevel(m_baseMipLevel)
+            .setLayerCount(m_arrayLayerCount)
+            .setLevelCount(m_mipLevelCount))
+        );
+    
+    m_scope.addDeferredCleanupFunction([=, device = m_device]() {
+        device.destroyImageView(imageView);
+    });
+    
+    return imageView;
 }
 
 }

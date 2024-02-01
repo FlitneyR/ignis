@@ -48,8 +48,8 @@ class Test final : public ignis::IEngine {
 
         auto pipeline_result = ignis::GraphicsPipelineBuilder {
             getDevice(),
-            ignis::PipelineLayoutBuilder { getDevice(), &getGlobalResourceScope() }.build(),
-            &getGlobalResourceScope()
+            ignis::PipelineLayoutBuilder { getDevice(), getGlobalResourceScope() }.build(),
+            getGlobalResourceScope()
         }
             .addVertexBinding(vk::VertexInputBindingDescription {}
                 .setBinding(0).setInputRate(vk::VertexInputRate::eVertex).setStride(sizeof(Vertex)))
@@ -71,7 +71,7 @@ class Test final : public ignis::IEngine {
 
             .build();
         vk::resultCheck(pipeline_result.result, "Failed to create pipeline");
-        m_pipeline = pipeline_result.value.pipeline;
+        m_pipeline = pipeline_result.value;
     }
     
     void recordDrawCommands(vk::CommandBuffer cmd) {
@@ -85,17 +85,16 @@ class Test final : public ignis::IEngine {
     std::string getName()       { return "Test"; }
     uint32_t    getAppVersion() { return VK_MAKE_API_VERSION(0, 1, 0, 0); }
 
+    Test() {}
+
 public:
-    Test() {
-        init();
-        setup();
-    }
+    static Test s_singleton;
 };
 
-int main() {
-    Test test;
+Test Test::s_singleton {};
 
-    test.mainLoop();
+int main() {
+    ignis::IEngine::getSingleton().main();
 
     return 0;
 }

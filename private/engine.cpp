@@ -3,10 +3,56 @@
 
 namespace ignis {
 
-IEngine::IEngine() {}
+IEngine* IEngine::s_singleton = nullptr;
 
-IEngine::~IEngine() {
+IEngine::IEngine() {
+    if (s_singleton)
+        throw std::runtime_error("Trying to construct an engine when one already exists");
+    
+    s_singleton = this;
+}
+
+IEngine::~IEngine() {}
+
+IEngine& IEngine::getSingleton() {
+    if (!s_singleton)
+        throw std::runtime_error("Trying to get IEngine singleton before it has been constructed");
+    
+    return *s_singleton;
+}
+
+void IEngine::main() {
+    init();
+    setup();
+
+    m_startTime = std::chrono::high_resolution_clock::now();
+    auto lastFrameStart = m_startTime;
+
+    using std::chrono::duration_cast;
+    using std::chrono::microseconds;
+    #define SECONDS_BETWEEN(from, to) static_cast<double>(duration_cast<microseconds>(to - from).count()) / 1'000'000.0
+
+    while (!glfwWindowShouldClose(m_window)) {
+        glfwPollEvents();
+
+        m_currentFrameStartTime = std::chrono::high_resolution_clock::now();
+        double timeSinceStart = SECONDS_BETWEEN(m_startTime, m_currentFrameStartTime);
+        double timeSinceLastFrameStart = SECONDS_BETWEEN(lastFrameStart, m_currentFrameStartTime);
+
+        registerDeltaTime(timeSinceLastFrameStart);
+        double deltaTime = getDeltaTime();
+
+        update(deltaTime);
+        draw();
+
+        lastFrameStart = m_currentFrameStartTime;
+    }
+
+    getDevice().waitIdle();
+
     getGlobalResourceScope().executeDeferredCleanupFunctions();
+
+    #undef SECONDS_BETWEEN
 }
 
 void IEngine::init() {
@@ -129,13 +175,14 @@ void IEngine::init() {
     for (int i = 0; i < m_swapchain.image_count; i++) {
         m_swapchainImages.push_back(Image {
             vk::Image { swapchainImages_result.value()[i] },
-            vk::ImageView { swapchainImageViews_result.value()[i] },
-            static_cast<vk::Format>(m_swapchain.image_format)
+            static_cast<vk::Format>(m_swapchain.image_format),
+            { 1280, 720, 1 }
         });
+        m_swapchainImageViews.push_back(swapchainImageViews_result.value()[i]);
     }
 
     grs.addDeferredCleanupFunction([&]() {
-        for (auto& image : m_swapchainImages) getDevice().destroyImageView(image.m_view);
+        for (auto& imageView : m_swapchainImageViews) getDevice().destroyImageView(imageView);
     });
 
     m_graphicsCmdPool = getDevice().createCommandPool(vk::CommandPoolCreateInfo {}.setQueueFamilyIndex(m_graphicsQueueIndex));
@@ -162,35 +209,6 @@ void IEngine::init() {
     });
 
     m_dispatchLoaderDynamic = vk::DispatchLoaderDynamic { getInstance(), vkGetInstanceProcAddr, getDevice(), vkGetDeviceProcAddr };
-}
-
-void IEngine::mainLoop() {
-    m_startTime = std::chrono::high_resolution_clock::now();
-    auto lastFrameStart = m_startTime;
-
-    using std::chrono::duration_cast;
-    using std::chrono::microseconds;
-    #define SECONDS_BETWEEN(from, to) static_cast<double>(duration_cast<microseconds>(to - from).count()) / 1'000'000.0
-
-    while (!glfwWindowShouldClose(m_window)) {
-        glfwPollEvents();
-
-        m_currentFrameStartTime = std::chrono::high_resolution_clock::now();
-        double timeSinceStart = SECONDS_BETWEEN(m_startTime, m_currentFrameStartTime);
-        double timeSinceLastFrameStart = SECONDS_BETWEEN(lastFrameStart, m_currentFrameStartTime);
-
-        registerDeltaTime(timeSinceLastFrameStart);
-        double deltaTime = getDeltaTime();
-
-        update(deltaTime);
-        draw();
-
-        lastFrameStart = m_currentFrameStartTime;
-    }
-
-    getDevice().waitIdle();
-
-    #undef SECONDS_BETWEEN
 }
 
 void IEngine::registerDeltaTime(double deltaTime) {
@@ -240,7 +258,7 @@ void IEngine::draw() {
         .execute(cmd);
 
     auto colorAttachment = vk::RenderingAttachmentInfoKHR {}
-        .setImageView(m_swapchainImages[imageIndex.value].m_view)
+        .setImageView(m_swapchainImageViews[imageIndex.value])
         .setImageLayout(vk::ImageLayout::eColorAttachmentOptimal)
         .setClearValue(vk::ClearValue {})
         .setStoreOp(vk::AttachmentStoreOp::eStore)
