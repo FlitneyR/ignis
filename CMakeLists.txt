@@ -25,6 +25,7 @@ add_library(engine
     private/engine.cpp
     private/resourceScope.cpp
     private/pipelineBuilder.cpp
+    private/bufferBuilder.cpp
     private/image.cpp)
 
 target_link_libraries(engine PUBLIC Vulkan::Vulkan vk-bootstrap::vk-bootstrap glfw VulkanMemoryAllocator)
