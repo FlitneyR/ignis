@@ -94,14 +94,12 @@ Image::Image(
     vk::Extent3D                 extent,
     uint32_t                     mipLevelCount,
     uint32_t                     arrayLayerCount,
-    std::optional<VmaAllocation> allocation,
     vk::ImageLayout              initialLayout
 ) : m_image(image),
     m_format(format),
     m_extent(extent),
     m_arrayLayerCount(arrayLayerCount),
     m_mipLevelCount(mipLevelCount),
-    m_allocation(allocation),
     m_imageLayouts(mipLevelCount * arrayLayerCount, initialLayout)
 {}
 vk::ImageLayout& Image::layoutAt(uint32_t mipLevel, uint32_t arrayLayer) {
@@ -163,7 +161,7 @@ ImageBuilder& ImageBuilder::setImageType(vk::ImageType type) {
     return *this;
 }
 
-Image ImageBuilder::build() {
+Allocated<Image> ImageBuilder::build() {
     VkImageCreateInfo imageCreateInfo = vk::ImageCreateInfo {}
         .setMipLevels(m_mipLevelCount)
         .setArrayLayers(m_arrayLayerCount)
@@ -175,7 +173,9 @@ Image ImageBuilder::build() {
         .setInitialLayout(vk::ImageLayout::eUndefined)
         .setSamples(vk::SampleCountFlagBits::e1);
 
-    VmaAllocationCreateInfo allocationCreateInfo;
+    VmaAllocationCreateInfo allocationCreateInfo {
+        .usage = m_memoryUsage,
+    };
 
     VkImage image;
     VmaAllocation allocation;
@@ -186,14 +186,13 @@ Image ImageBuilder::build() {
         vmaDestroyImage(allocator, image, allocation);
     });
 
-    return Image {
+    return Allocated { Image {
         image,
         m_format,
         m_extent,
         m_mipLevelCount,
-        m_arrayLayerCount,
-        allocation
-    };
+        m_arrayLayerCount
+    }, allocation };
 }
 
 ImageViewBuilder::ImageViewBuilder(
@@ -209,8 +208,8 @@ ImageViewBuilder::ImageViewBuilder(
         .setB(vk::ComponentSwizzle::eB)
         .setA(vk::ComponentSwizzle::eA);
     
-    m_arrayLayerCount = image.m_arrayLayerCount;
-    m_mipLevelCount = image.m_mipLevelCount;
+    m_arrayLayerCount = image.getArrayLayerCount();
+    m_mipLevelCount = image.getMipLevelCount();
 }
 
 ImageViewBuilder& ImageViewBuilder::setComponentMapping(vk::ComponentMapping mapping) {
@@ -242,8 +241,8 @@ ImageViewBuilder& ImageViewBuilder::setMipLevelRange(uint32_t base, uint32_t cou
 
 vk::ImageView ImageViewBuilder::build() {
     vk::ImageView imageView = m_device.createImageView(vk::ImageViewCreateInfo {}
-        .setFormat(r_image.m_format)
-        .setImage(r_image.m_image)
+        .setFormat(r_image.getFormat())
+        .setImage(r_image.getImage())
         .setComponents(m_components)
         .setViewType(m_viewType)
         .setSubresourceRange(vk::ImageSubresourceRange {}
