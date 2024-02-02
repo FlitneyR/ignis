@@ -3,11 +3,8 @@
 namespace ignis {
 
 BufferBuilder::BufferBuilder(
-    vk::Device device,
-    VmaAllocator allocator,
     ResourceScope& scope
-) : IBuilder(device, scope),
-    m_allocator(allocator)
+) : IBuilder(scope)
 {}
 
 BufferBuilder& BufferBuilder::addQueueFamilyIndices(std::vector<uint32_t> indices) {
@@ -36,10 +33,10 @@ vk::ResultValue<Allocated<vk::Buffer>> BufferBuilder::build() {
     VkBufferCreateInfo bufferCreateInfo = m_bufferCreateInfo;
     VkBuffer buffer;
 
-    vk::Result result { vmaCreateBuffer(m_allocator, &bufferCreateInfo, &m_allocationCreateInfo, &buffer, &value.m_allocation, nullptr) };
+    vk::Result result { vmaCreateBuffer(getAllocator(), &bufferCreateInfo, &m_allocationCreateInfo, &buffer, &value.m_allocation, nullptr) };
     *value = buffer;
 
-    m_scope.addDeferredCleanupFunction([=, allocator = m_allocator, allocation = value.m_allocation]() {
+    r_scope.addDeferredCleanupFunction([=, allocator = getAllocator(), allocation = value.m_allocation]() {
         vmaDestroyBuffer(allocator, buffer, allocation);
     });
 

@@ -15,7 +15,7 @@ IEngine::IEngine() {
 
 IEngine::~IEngine() {}
 
-IEngine& IEngine::getSingleton() {
+IEngine& IEngine::get() {
     if (!s_singleton)
         throw std::runtime_error("Trying to get IEngine singleton before it has been constructed");
     
@@ -184,13 +184,13 @@ void IEngine::init() {
         for (auto& fence     : m_frameFinishedFences)         getDevice().destroyFence(fence);
     });
 
-    m_depthImage = ImageBuilder { getDevice(), getAllocator(), getGlobalResourceScope() }
+    m_depthImage = ImageBuilder { getGlobalResourceScope() }
         .setFormat(vk::Format::eD32Sfloat)
         .setUsage(vk::ImageUsageFlagBits::eDepthStencilAttachment)
         .setSize({ 1280, 720 })
         .build();
 
-    m_depthImageView = ImageViewBuilder { getDevice(), *m_depthImage, getGlobalResourceScope() }
+    m_depthImageView = ImageViewBuilder { *m_depthImage, getGlobalResourceScope() }
         .setAspectMask(vk::ImageAspectFlagBits::eDepth)
         .build();
 

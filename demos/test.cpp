@@ -64,36 +64,28 @@ class Test final : public ignis::IEngine {
     };
 
     void setup() {
-        auto bufferBuilder = ignis::BufferBuilder { getDevice(), getAllocator(), getGlobalResourceScope() }
+        auto bufferBuilder = ignis::BufferBuilder { getGlobalResourceScope() }
             .addQueueFamilyIndices({ getQueueIndex(vkb::QueueType::graphics) })
+            .setBufferUsage(vk::BufferUsageFlagBits::eVertexBuffer)
             .setAllocationUsage(VMA_MEMORY_USAGE_CPU_TO_GPU);
 
         m_vertexBuffer = ignis::getValue(ignis::BufferBuilder { bufferBuilder }
-            .setSize(sizeof(Vertex) * m_vertices.size())
-            .setBufferUsage(vk::BufferUsageFlagBits::eVertexBuffer)
-            .build(), "Failed to createVertexBuffer");
-
-        m_indexBuffer = ignis::getValue(ignis::BufferBuilder { bufferBuilder }
-            .setSize(sizeof(uint16_t) * m_indices.size())
-            .setBufferUsage(vk::BufferUsageFlagBits::eIndexBuffer)
-            .build(), "Failed to create index buffer");
+            .setSizeBuildAndCopyData(m_vertices), "Failed to createVertexBuffer");
 
         m_instanceBuffer = ignis::getValue(ignis::BufferBuilder { bufferBuilder }
-            .setSize(sizeof(Instance) * m_instances.size())
-            .setBufferUsage(vk::BufferUsageFlagBits::eVertexBuffer)
-            .build(), "Failed to create instance buffer");
+            .setSizeBuildAndCopyData(m_instances), "Failed to create instance buffer");
 
-        m_vertexBuffer.copyData(m_allocator, m_vertices);
-        m_indexBuffer.copyData(m_allocator, m_indices);
-        m_instanceBuffer.copyData(m_allocator, m_instances);
+        m_indexBuffer = ignis::getValue(ignis::BufferBuilder { bufferBuilder }
+            .setBufferUsage(vk::BufferUsageFlagBits::eIndexBuffer)
+            .setSizeBuildAndCopyData(m_indices), "Failed to create index buffer");
 
-        m_pipelineLayout = ignis::PipelineLayoutBuilder { getDevice(), getGlobalResourceScope() }
+        m_pipelineLayout = ignis::PipelineLayoutBuilder { getGlobalResourceScope() }
             .addPushConstantRange(vk::PushConstantRange {}
                 .setSize(sizeof(Camera))
                 .setStageFlags(vk::ShaderStageFlagBits::eAllGraphics))
             .build();
 
-        m_pipeline = ignis::getValue(ignis::GraphicsPipelineBuilder { getDevice(), m_pipelineLayout, getGlobalResourceScope() }
+        m_pipeline = ignis::getValue(ignis::GraphicsPipelineBuilder { m_pipelineLayout, getGlobalResourceScope() }
             .addVertexBinding<Vertex>(0)
             .addInstanceBinding<Instance>(1)
             .addVertexAttribute<glm::vec3>(0, 0, __offsetof(Vertex, position))
@@ -136,7 +128,7 @@ public:
 Test Test::s_singleton {};
 
 int main() {
-    ignis::IEngine::getSingleton().main();
+    ignis::IEngine::get().main();
 
     return 0;
 }

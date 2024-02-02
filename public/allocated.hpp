@@ -4,11 +4,16 @@
 
 namespace ignis {
 
+class BaseAllocated {
+protected:
+    VmaAllocator getAllocator();
+};
+
 /**
  * @brief Wrapper for a resource of type `Inner` to store data related to VMA allocations
  */
 template<typename Inner>
-struct Allocated {
+struct Allocated : public BaseAllocated {
     Inner m_inner;
     VmaAllocation m_allocation;
 
@@ -24,42 +29,42 @@ struct Allocated {
     Inner& operator  *() { return  m_inner; }
     Inner* operator ->() { return &m_inner; }
 
-    VmaAllocationInfo getInfo(VmaAllocator allocator) {
+    VmaAllocationInfo getInfo() {
         VmaAllocationInfo info;
-        vmaGetAllocationInfo(allocator, m_allocation, &info);
+        vmaGetAllocationInfo(getAllocator(), m_allocation, &info);
         return info;
     }
 
-    vk::ResultValue<void*> map(VmaAllocator allocator) {
+    vk::ResultValue<void*> map() {
         void* data;
-        vk::Result result { vmaMapMemory(allocator, m_allocation, &data) };
+        vk::Result result { vmaMapMemory(getAllocator(), m_allocation, &data) };
         return vk::ResultValue { result, data };
     }
 
-    void unmap(VmaAllocator allocator) {
-        vmaUnmapMemory(allocator, m_allocation);
+    void unmap() {
+        vmaUnmapMemory(getAllocator(), m_allocation);
     }
 
-    void flush(VmaAllocator allocator) {
-        VmaAllocationInfo info = getInfo(allocator);
-        vmaFlushAllocation(allocator, m_allocation, info.offset, info.size);
+    void flush() {
+        VmaAllocationInfo info = getInfo();
+        vmaFlushAllocation(getAllocator(), m_allocation, info.offset, info.size);
     }
 
-    vk::Result copyData(VmaAllocator allocator, void* data, uint32_t size) {
-        vk::ResultValue<void*> mapping = map(allocator);
+    vk::Result copyData(void* data, uint32_t size) {
+        vk::ResultValue<void*> mapping = map();
         if (mapping.result != vk::Result::eSuccess) return mapping.result;
 
         std::memcpy(mapping.value, data, size);
 
-        flush(allocator);
-        unmap(allocator);
+        flush();
+        unmap();
 
         return vk::Result::eSuccess;
     }
 
     template<typename T>
-    vk::Result copyData(VmaAllocator allocator, std::vector<T> data) {
-        return copyData(allocator, data.data(), data.size() * sizeof(T));
+    vk::Result copyData(std::vector<T> data) {
+        return copyData(data.data(), data.size() * sizeof(T));
     }
 };
 

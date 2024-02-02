@@ -12,7 +12,10 @@ class IEngine {
 public:
     void main();
 
-    static IEngine& getSingleton();
+    /**
+     * @brief Get the engine singleton
+     */
+    static IEngine& get();
 
     VmaAllocator       getAllocator()      const { return m_allocator; }
     vk::Instance       getInstance()       const { return { m_instance }; }
@@ -44,8 +47,8 @@ protected:
     IEngine& operator =(const IEngine& other) = delete;
 
     ResourceScope m_globalResourceScope;
-    GLFWwindow* m_window;
-    VmaAllocator m_allocator;
+    GLFWwindow*   m_window;
+    VmaAllocator  m_allocator;
 
     vkb::Instance       m_instance;
     vkb::PhysicalDevice m_phys_device;

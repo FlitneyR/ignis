@@ -94,7 +94,7 @@ public:
     vk::ImageType         m_imageType          = vk::ImageType::e2D;
     VmaMemoryUsage        m_memoryUsage        = VMA_MEMORY_USAGE_GPU_ONLY;
 
-    ImageBuilder(vk::Device device, VmaAllocator allocator, ResourceScope& scope);
+    ImageBuilder(ResourceScope& scope);
 
     ImageBuilder& setMipLevelCount(uint32_t mipLevelCount);
     ImageBuilder& setArrayLayerCount(uint32_t arrayLayerCount);
@@ -121,7 +121,7 @@ public:
     uint32_t             m_arrayLayerCount = 1;
     uint32_t             m_mipLevelCount   = 1;
 
-    ImageViewBuilder(vk::Device device, Image& image, ResourceScope& scope);
+    ImageViewBuilder(Image& image, ResourceScope& scope);
 
     ImageViewBuilder& setComponentMapping(vk::ComponentMapping mapping);
     ImageViewBuilder& setViewType(vk::ImageViewType viewType);

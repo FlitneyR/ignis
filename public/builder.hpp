@@ -1,23 +1,24 @@
 #pragma once
 
-#include "libraries.hpp"
 #include "resourceScope.hpp"
 
 namespace ignis {
 
-template<typename Type>
-class IBuilder {
+class BuilderBase {
 protected:
-    vk::Device m_device;
-    ResourceScope& m_scope;
+    ResourceScope& r_scope;
 
 public:
-    IBuilder(
-        vk::Device device,
-        ResourceScope& scope
-    ) : m_device(device),
-        m_scope(scope)
-    {}
+    BuilderBase(ResourceScope& scope) : r_scope(scope) {}
+
+    vk::Device   getDevice();
+    VmaAllocator getAllocator();
+};
+
+template<typename Type>
+class IBuilder : public BuilderBase {
+public:
+    IBuilder(ResourceScope& scope) : BuilderBase(scope) {}
 
     virtual Type build() = 0;
 };

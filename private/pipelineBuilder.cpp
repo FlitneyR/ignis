@@ -5,9 +5,8 @@
 namespace ignis {
 
 PipelineLayoutBuilder::PipelineLayoutBuilder(
-    vk::Device device,
     ResourceScope& scope
-) : IBuilder(device, scope)
+) : IBuilder(scope)
 {}
 
 PipelineLayoutBuilder& PipelineLayoutBuilder::addSet(
@@ -25,12 +24,12 @@ PipelineLayoutBuilder& PipelineLayoutBuilder::addPushConstantRange(
 }
 
 vk::PipelineLayout PipelineLayoutBuilder::build() {
-    vk::PipelineLayout layout = m_device.createPipelineLayout(vk::PipelineLayoutCreateInfo {}
+    vk::PipelineLayout layout = getDevice().createPipelineLayout(vk::PipelineLayoutCreateInfo {}
         .setSetLayouts(m_setLayouts)
         .setPushConstantRanges(m_pushConstantRanges)
         );
     
-    m_scope.addDeferredCleanupFunction([=, device = m_device]() {
+    r_scope.addDeferredCleanupFunction([=, device = getDevice()]() {
         device.destroyPipelineLayout(layout);
     });
     
@@ -38,16 +37,14 @@ vk::PipelineLayout PipelineLayoutBuilder::build() {
 }
 
 IPipelineBuilder::IPipelineBuilder(
-    vk::Device device,
     ResourceScope& scope
-) : IBuilder(device, scope)
+) : IBuilder(scope)
 {}
 
 IPipelineBuilder::IPipelineBuilder(
-    vk::Device device,
     vk::PipelineLayout layout,
     ResourceScope& scope
-) : IBuilder(device, scope),
+) : IBuilder(scope),
     m_layout(layout)
 {}
 
@@ -62,12 +59,12 @@ vk::ShaderModule IPipelineBuilder::loadShaderModule(const char* filename) {
     file.seekg(0);
     file.read(code.data(), filesize);
 
-    vk::ShaderModule shaderModule = m_device.createShaderModule(vk::ShaderModuleCreateInfo {}
+    vk::ShaderModule shaderModule = getDevice().createShaderModule(vk::ShaderModuleCreateInfo {}
         .setCodeSize(code.size())
         .setPCode(reinterpret_cast<uint32_t*>(code.data()))
         );
     
-    m_scope.addDeferredCleanupFunction([=, device = m_device]() {
+    r_scope.addDeferredCleanupFunction([=, device = getDevice()]() {
         device.destroyShaderModule(shaderModule);
     });
 
@@ -75,16 +72,14 @@ vk::ShaderModule IPipelineBuilder::loadShaderModule(const char* filename) {
 }
 
 ComputePipelineBuilder::ComputePipelineBuilder(
-    vk::Device device,
     ResourceScope& scope
-) : IPipelineBuilder(device, scope)
+) : IPipelineBuilder(scope)
 {}
 
 ComputePipelineBuilder::ComputePipelineBuilder(
-    vk::Device device,
     vk::PipelineLayout layout,
     ResourceScope& scope
-) : IPipelineBuilder(device, layout, scope)
+) : IPipelineBuilder(layout, scope)
 {}
 
 ComputePipelineBuilder& ComputePipelineBuilder::setPipelineLayout(vk::PipelineLayout pipelineLayout) {
@@ -100,7 +95,7 @@ ComputePipelineBuilder& ComputePipelineBuilder::setFunctionName(const char* func
 }
 
 vk::ResultValue<vk::Pipeline> ComputePipelineBuilder::build() {
-    auto pipeline_result = m_device.createComputePipeline(nullptr, vk::ComputePipelineCreateInfo {}
+    auto pipeline_result = getDevice().createComputePipeline(nullptr, vk::ComputePipelineCreateInfo {}
         .setLayout(m_layout)
         .setStage(vk::PipelineShaderStageCreateInfo {}
             .setModule(m_shaderModule)
@@ -110,7 +105,7 @@ vk::ResultValue<vk::Pipeline> ComputePipelineBuilder::build() {
     if (pipeline_result.result != vk::Result::eSuccess)
         vk::ResultValue<vk::Pipeline> { pipeline_result.result, VK_NULL_HANDLE };
 
-    m_scope.addDeferredCleanupFunction([=, device = m_device, pipeline = pipeline_result.value ] {
+    r_scope.addDeferredCleanupFunction([=, device = getDevice(), pipeline = pipeline_result.value ] {
         device.destroyPipeline(pipeline);
     });
 
@@ -118,18 +113,16 @@ vk::ResultValue<vk::Pipeline> ComputePipelineBuilder::build() {
 }
 
 GraphicsPipelineBuilder::GraphicsPipelineBuilder(
-    vk::Device device,
     ResourceScope& scope
-) : IPipelineBuilder(device, scope)
+) : IPipelineBuilder(scope)
 {
     useDefaults();
 }
 
 GraphicsPipelineBuilder::GraphicsPipelineBuilder(
-    vk::Device device,
     vk::PipelineLayout pipelineLayout,
     ResourceScope& scope
-) : IPipelineBuilder(device, pipelineLayout, scope)
+) : IPipelineBuilder(pipelineLayout, scope)
 {
     useDefaults();
 }
@@ -234,7 +227,7 @@ vk::ResultValue<vk::Pipeline> GraphicsPipelineBuilder::build() {
         .setPNext(&m_renderingCreateInfo)
         ;
 
-    vk::ResultValue<vk::Pipeline> pipelineResult = m_device.createGraphicsPipeline(
+    vk::ResultValue<vk::Pipeline> pipelineResult = getDevice().createGraphicsPipeline(
         VK_NULL_HANDLE,
         createInfo
     );
@@ -242,7 +235,7 @@ vk::ResultValue<vk::Pipeline> GraphicsPipelineBuilder::build() {
     if (pipelineResult.result != vk::Result::eSuccess)
         return vk::ResultValue<vk::Pipeline> { pipelineResult.result, VK_NULL_HANDLE };
 
-    m_scope.addDeferredCleanupFunction([=, device = m_device, pipeline = pipelineResult.value]() {
+    r_scope.addDeferredCleanupFunction([=, device = getDevice(), pipeline = pipelineResult.value]() {
         device.destroyPipeline(pipeline);
     });
 

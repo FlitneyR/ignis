@@ -12,7 +12,7 @@ public:
     std::vector<vk::DescriptorSetLayout> m_setLayouts {};
     std::vector<vk::PushConstantRange> m_pushConstantRanges {};
 
-    PipelineLayoutBuilder(vk::Device device, ResourceScope& scope);
+    PipelineLayoutBuilder(ResourceScope& scope);
 
     PipelineLayoutBuilder& addSet(vk::DescriptorSetLayout setLayout);
     PipelineLayoutBuilder& addPushConstantRange(vk::PushConstantRange pcRange);
@@ -26,8 +26,8 @@ protected:
     std::vector<vk::ShaderModule> m_modules;
 
 public:
-    IPipelineBuilder(vk::Device device, ResourceScope& scope);
-    IPipelineBuilder(vk::Device device, vk::PipelineLayout layout, ResourceScope& scope);
+    IPipelineBuilder(ResourceScope& scope);
+    IPipelineBuilder(vk::PipelineLayout layout, ResourceScope& scope);
 
     vk::ShaderModule loadShaderModule(const char* filename);
 };
@@ -37,8 +37,8 @@ public:
     std::string m_functionName;
     vk::ShaderModule m_shaderModule;
 
-    ComputePipelineBuilder(vk::Device device, ResourceScope& scope);
-    ComputePipelineBuilder(vk::Device device, vk::PipelineLayout layout, ResourceScope& scope);
+    ComputePipelineBuilder(ResourceScope& scope);
+    ComputePipelineBuilder(vk::PipelineLayout layout, ResourceScope& scope);
 
     ComputePipelineBuilder& setPipelineLayout(vk::PipelineLayout pipelineLayout);
     ComputePipelineBuilder& setShaderModule(vk::ShaderModule shaderModule);
@@ -71,8 +71,8 @@ public:
     vk::PipelineViewportStateCreateInfo m_viewportState {};
     std::vector<vk::PipelineShaderStageCreateInfo> m_stages {};
 
-    GraphicsPipelineBuilder(vk::Device device, ResourceScope& scope);
-    GraphicsPipelineBuilder(vk::Device device, vk::PipelineLayout, ResourceScope& scope);
+    GraphicsPipelineBuilder(ResourceScope& scope);
+    GraphicsPipelineBuilder(vk::PipelineLayout layout, ResourceScope& scope);
 
     static vk::PipelineColorBlendAttachmentState   defaultAttachmentBlendState();
     static vk::PipelineDepthStencilStateCreateInfo defaultDepthStencilState();

@@ -107,11 +107,8 @@ vk::ImageLayout& Image::layoutAt(uint32_t mipLevel, uint32_t arrayLayer) {
 }
 
 ImageBuilder::ImageBuilder(
-    vk::Device device,
-    VmaAllocator allocator,
     ResourceScope& scope
-) : IBuilder(device, scope),
-    m_allocator(allocator)
+) : IBuilder(scope)
 {}
 
 ImageBuilder& ImageBuilder::setMipLevelCount(uint32_t mipLevelCount) {
@@ -180,9 +177,9 @@ Allocated<Image> ImageBuilder::build() {
     VkImage image;
     VmaAllocation allocation;
     VmaAllocationInfo allocationInfo;
-    vmaCreateImage(m_allocator, &imageCreateInfo, &allocationCreateInfo, &image, &allocation, &allocationInfo);
+    vmaCreateImage(getAllocator(), &imageCreateInfo, &allocationCreateInfo, &image, &allocation, &allocationInfo);
 
-    m_scope.addDeferredCleanupFunction([=, allocator = m_allocator]() {
+    r_scope.addDeferredCleanupFunction([=, allocator = getAllocator()]() {
         vmaDestroyImage(allocator, image, allocation);
     });
 
@@ -196,10 +193,9 @@ Allocated<Image> ImageBuilder::build() {
 }
 
 ImageViewBuilder::ImageViewBuilder(
-    vk::Device device,
     Image& image,
     ResourceScope& scope
-) : IBuilder(device, scope),
+) : IBuilder(scope),
     r_image(image)
 {
     m_components
@@ -240,7 +236,7 @@ ImageViewBuilder& ImageViewBuilder::setMipLevelRange(uint32_t base, uint32_t cou
 }
 
 vk::ImageView ImageViewBuilder::build() {
-    vk::ImageView imageView = m_device.createImageView(vk::ImageViewCreateInfo {}
+    vk::ImageView imageView = getDevice().createImageView(vk::ImageViewCreateInfo {}
         .setFormat(r_image.getFormat())
         .setImage(r_image.getImage())
         .setComponents(m_components)
@@ -253,7 +249,7 @@ vk::ImageView ImageViewBuilder::build() {
             .setLevelCount(m_mipLevelCount))
         );
     
-    m_scope.addDeferredCleanupFunction([=, device = m_device]() {
+    r_scope.addDeferredCleanupFunction([=, device = getDevice()]() {
         device.destroyImageView(imageView);
     });
     
