@@ -45,9 +45,9 @@ struct Allocated : public BaseAllocated {
         vmaUnmapMemory(getAllocator(), m_allocation);
     }
 
-    void flush() {
+    vk::Result flush() {
         VmaAllocationInfo info = getInfo();
-        vmaFlushAllocation(getAllocator(), m_allocation, info.offset, info.size);
+        return vmaFlushAllocation(getAllocator(), m_allocation, info.offset, info.size);
     }
 
     vk::Result copyData(void* data, uint32_t size) {
@@ -56,10 +56,10 @@ struct Allocated : public BaseAllocated {
 
         std::memcpy(mapping.value, data, size);
 
-        flush();
+        vk::Result result = flush();
         unmap();
 
-        return vk::Result::eSuccess;
+        return result;
     }
 
     template<typename T>

@@ -26,7 +26,7 @@ public:
         vk::ResultValue<Allocated<vk::Buffer>> ret = build();
 
         if (ret.result == vk::Result::eSuccess)
-            ret.value.copyData(data);
+            ret.result = ret.value.copyData(data);
 
         return ret;
     }
