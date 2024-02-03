@@ -43,6 +43,7 @@ vk::Result BaseAllocated::copyData(void* data, uint32_t size) {
 vk::Result Allocated<vk::Buffer>::stagedCopyData(void* data, uint32_t size, vk::Fence fence, vk::Semaphore signalSemaphore) {
     bool async = fence != VK_NULL_HANDLE || signalSemaphore != VK_NULL_HANDLE;
 
+    // using a pointer here so it can be deleted from another thread
     ResourceScope* tempScope = new ResourceScope();
     IEngine& engine = IEngine::get();
     vk::Device device = engine.getDevice();
@@ -64,13 +65,15 @@ vk::Result Allocated<vk::Buffer>::stagedCopyData(void* data, uint32_t size, vk::
 
     vk::CommandBuffer cmd = engine.beginOneTimeCommandBuffer(vkb::QueueType::graphics);
     cmd.copyBuffer(*stagingBuffer.value, m_inner, vk::BufferCopy {}.setSize(size));
-    engine.submitOneTimeCommandBuffer(cmd, vkb::QueueType::graphics,
-        vk::SubmitInfo {}.setSignalSemaphores(signalSemaphore),
-        fence);
+
+    vk::SubmitInfo submitInfo;
+    if (signalSemaphore != VK_NULL_HANDLE) submitInfo.setSignalSemaphores(signalSemaphore);
+
+    engine.submitOneTimeCommandBuffer(cmd, vkb::QueueType::graphics, submitInfo, fence);
 
     if (async) {
         std::thread cleanUpAndSignalFence ([=, device = device, fence = fence]() {
-            device.waitForFences(fence, true, UINT64_MAX);
+            auto _ = device.waitForFences(fence, true, UINT64_MAX);
             delete tempScope;
         });
         cleanUpAndSignalFence.detach();
