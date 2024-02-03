@@ -1,5 +1,6 @@
 #include "engine.hpp"
 #include "common.hpp"
+#include "descriptorSetBuilder.hpp"
 #include <iostream>
 
 namespace ignis {
@@ -60,6 +61,10 @@ void IEngine::main() {
         registerDeltaTime(timeSinceLastFrameStart);
         double deltaTime = getDeltaTime();
 
+        ImGui_ImplVulkan_NewFrame();
+        ImGui_ImplGlfw_NewFrame();
+        ImGui::NewFrame();
+
         update(deltaTime);
         draw();
 
@@ -84,11 +89,16 @@ void IEngine::init() {
     glm::ivec2 initialWindowSize = getInitialWindowSize();
     glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
     glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
-    glfwWindowHint(GLFW_COCOA_RETINA_FRAMEBUFFER, GLFW_FALSE);
+    // glfwWindowHint(GLFW_COCOA_RETINA_FRAMEBUFFER, GLFW_FALSE);
     m_window = glfwCreateWindow(
         initialWindowSize.x, initialWindowSize.y,
         getName().c_str(), nullptr, nullptr
     );
+
+    glm::ivec2 _framebufferSize;
+    glfwGetFramebufferSize(m_window, &_framebufferSize.x, &_framebufferSize.y);
+    glm::vec<2, uint32_t> framebufferSize = _framebufferSize;
+
     grs.addDeferredCleanupFunction([&]() {
         glfwDestroyWindow(m_window);
     });
@@ -171,7 +181,7 @@ void IEngine::init() {
         m_swapchainImages.push_back(Image {
             vk::Image { swapchainImages[i] },
             static_cast<vk::Format>(m_swapchain.image_format),
-            { 1280, 720, 1 }
+            { framebufferSize.x, framebufferSize.y, 1 }
         });
         m_swapchainImageViews.push_back(swapchainImageViews[i]);
     }
@@ -204,7 +214,7 @@ void IEngine::init() {
     m_depthImage = ImageBuilder { getGlobalResourceScope() }
         .setFormat(vk::Format::eD32Sfloat)
         .setUsage(vk::ImageUsageFlagBits::eDepthStencilAttachment)
-        .setSize({ 1280, 720 })
+        .setSize({ framebufferSize.x, framebufferSize.y })
         .build();
 
     m_depthImageView = ImageViewBuilder { *m_depthImage, getGlobalResourceScope() }
@@ -212,6 +222,58 @@ void IEngine::init() {
         .build();
 
     m_dispatchLoaderDynamic = vk::DispatchLoaderDynamic { getInstance(), vkGetInstanceProcAddr, getDevice(), vkGetDeviceProcAddr };
+
+    m_imGuiContext = ImGui::CreateContext();
+    grs.addDeferredCleanupFunction([context = getImGuiContext()]() {
+        ImGui::DestroyContext(context);
+    });
+
+    ImGuiIO& imGuiIO = ImGui::GetIO();
+    imGuiIO.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
+    imGuiIO.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;
+    imGuiIO.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
+
+    ImGui_ImplGlfw_InitForVulkan(m_window, true);
+    grs.addDeferredCleanupFunction([]() {
+        ImGui_ImplGlfw_Shutdown();
+    });
+
+    vk::DescriptorPool imGuiDescriptorPool = DescriptorPoolBuilder { getGlobalResourceScope() }
+        .addFlags(vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet)
+        .setMaxSetCount(1'000)
+        .setPoolSizes({
+            { vk::DescriptorType::eSampler, 1000 },
+            { vk::DescriptorType::eCombinedImageSampler, 1000 },
+            { vk::DescriptorType::eSampledImage, 1000 },
+            { vk::DescriptorType::eStorageImage, 1000 },
+            { vk::DescriptorType::eUniformTexelBuffer, 1000 },
+            { vk::DescriptorType::eStorageTexelBuffer, 1000 },
+            { vk::DescriptorType::eUniformBuffer, 1000 },
+            { vk::DescriptorType::eStorageBuffer, 1000 },
+            { vk::DescriptorType::eUniformBufferDynamic, 1000 },
+            { vk::DescriptorType::eStorageBufferDynamic, 1000 },
+            { vk::DescriptorType::eInputAttachment, 1000 },
+        })
+        .build();
+
+    auto imGuiInitInfo = ImGui_ImplVulkan_InitInfo {
+        .Instance = getInstance(),
+        .PhysicalDevice = getPhysicalDevice(),
+        .Device = getDevice(),
+        .QueueFamily = getQueueIndex(vkb::QueueType::graphics),
+        .Queue = getQueue(vkb::QueueType::graphics),
+        .MinImageCount = 2,
+        .ImageCount = s_framesInFlight,
+        .MSAASamples = VK_SAMPLE_COUNT_1_BIT,
+        .UseDynamicRendering = true,
+        .ColorAttachmentFormat = m_swapchain.image_format,
+        .DescriptorPool = imGuiDescriptorPool
+    };
+    ImGui_ImplVulkan_Init(&imGuiInitInfo, VK_NULL_HANDLE);
+    grs.addDeferredCleanupFunction([]() {
+        ImGui_ImplVulkan_Shutdown();
+    });
+
 }
 
 void IEngine::registerDeltaTime(double deltaTime) {
@@ -239,6 +301,8 @@ double IEngine::getTime() const {
 }
 
 void IEngine::draw() {
+    ImGui::Render();
+
     vk::Fence frameFinishedFence = m_frameFinishedFences[getInFlightIndex()];
     vk::Semaphore imageAcquiredSemaphore = m_imageAcquiredSemaphores[getInFlightIndex()];
     vk::Semaphore renderingFinishedSemaphore = m_renderingFinishedSemaphores[getInFlightIndex()];
@@ -278,20 +342,34 @@ void IEngine::draw() {
         .setStoreOp(vk::AttachmentStoreOp::eStore)
         .setLoadOp(vk::AttachmentLoadOp::eClear)
         ;
+    
+    glm::ivec2 _windowSize;
+    glfwGetFramebufferSize(m_window, &_windowSize.x, &_windowSize.y);
+    glm::vec<2, uint32_t> windowSize = _windowSize;
 
     cmd.beginRendering(vk::RenderingInfo {}
         .setColorAttachments(colorAttachment)
         .setPDepthAttachment(&depthAttachment)
         .setLayerCount(1)
-        .setRenderArea({ { 0, 0 }, { 1280, 720 } }),
+        .setRenderArea({ { 0, 0 }, { windowSize.x, windowSize.y } }),
         m_dispatchLoaderDynamic);
 
     cmd.setViewport(0, vk::Viewport {}
         .setX(0).setY(0)
-        .setWidth(1280).setHeight(720)
+        .setWidth(windowSize.x).setHeight(windowSize.y)
         .setMinDepth(0).setMaxDepth(1));
     
     recordDrawCommands(cmd);
+    
+    cmd.endRendering(m_dispatchLoaderDynamic);
+
+    cmd.beginRendering(vk::RenderingInfo {}
+        .setColorAttachments(colorAttachment.setLoadOp(vk::AttachmentLoadOp::eLoad))
+        .setLayerCount(1)
+        .setRenderArea({ { 0, 0 }, { windowSize.x, windowSize.y } }),
+        m_dispatchLoaderDynamic);
+    
+    ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), cmd);
     
     cmd.endRendering(m_dispatchLoaderDynamic);
     

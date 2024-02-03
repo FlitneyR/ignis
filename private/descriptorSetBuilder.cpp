@@ -23,8 +23,14 @@ DescriptorPoolBuilder& DescriptorPoolBuilder::addPoolSize(vk::DescriptorPoolSize
     return *this;
 }
 
+DescriptorPoolBuilder& DescriptorPoolBuilder::addFlags(vk::DescriptorPoolCreateFlags flags) {
+    m_flags |= flags;
+    return *this;
+}
+
 vk::DescriptorPool DescriptorPoolBuilder::build() {
     vk::DescriptorPool pool = getDevice().createDescriptorPool(vk::DescriptorPoolCreateInfo {}
+        .setFlags(m_flags)
         .setMaxSets(m_maxSetCount)
         .setPoolSizes(m_poolSizes));
     

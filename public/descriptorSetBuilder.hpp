@@ -6,6 +6,7 @@ namespace ignis {
 class DescriptorPoolBuilder : public IBuilder<vk::DescriptorPool> {
     uint32_t m_maxSetCount;
     std::vector<vk::DescriptorPoolSize> m_poolSizes;
+    vk::DescriptorPoolCreateFlags m_flags;
 
 public:
     DescriptorPoolBuilder(ResourceScope& scope) : IBuilder(scope) {}
@@ -14,6 +15,7 @@ public:
     DescriptorPoolBuilder& setPoolSizes(std::vector<vk::DescriptorPoolSize> sizes);
     DescriptorPoolBuilder& addPoolSizes(std::vector<vk::DescriptorPoolSize> sizes);
     DescriptorPoolBuilder& addPoolSize(vk::DescriptorPoolSize size);
+    DescriptorPoolBuilder& addFlags(vk::DescriptorPoolCreateFlags flags);
 
     vk::DescriptorPool build() override;
 };

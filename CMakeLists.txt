@@ -15,11 +15,31 @@ FetchContent_Declare(
     GIT_REPOSITORY https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator
     GIT_TAG        v3.0.1
 )
+FetchContent_Declare(
+    DearImGUI
+    GIT_REPOSITORY https://github.com/ocornut/imgui
+    GIT_TAG        v1.90.1-docking
+)
 
-FetchContent_MakeAvailable(vk_bootstrap fetch_VulkanMemoryAllocator)
+FetchContent_MakeAvailable(vk_bootstrap fetch_VulkanMemoryAllocator DearImGUI)
 
 find_package(Vulkan REQUIRED)
 find_package(glfw3 CONFIG REQUIRED)
+set(imgui_SRC ${FETCHCONTENT_BASE_DIR}/dearimgui-src)
+set(imgui_INCLUDE ${imgui_SRC})
+set(imgui_BACKENDS ${imgui_SRC}/backends)
+add_library(imgui
+    ${imgui_SRC}/imgui.cpp
+    ${imgui_SRC}/imgui_draw.cpp
+    ${imgui_SRC}/imgui_demo.cpp
+    ${imgui_SRC}/imgui_tables.cpp
+    ${imgui_SRC}/imgui_widgets.cpp
+    ${imgui_BACKENDS}/imgui_impl_glfw.cpp
+    ${imgui_BACKENDS}/imgui_impl_vulkan.cpp
+)
+
+target_include_directories(imgui PUBLIC ${imgui_INCLUDE} ${imgui_BACKENDS})
+target_link_libraries(imgui PUBLIC Vulkan::Vulkan glfw)
 
 add_library(engine
     private/engine.cpp
@@ -31,7 +51,7 @@ add_library(engine
     private/builder.cpp
     private/descriptorSetBuilder.cpp)
 
-target_link_libraries(engine PUBLIC Vulkan::Vulkan vk-bootstrap::vk-bootstrap glfw VulkanMemoryAllocator)
+target_link_libraries(engine PUBLIC Vulkan::Vulkan vk-bootstrap::vk-bootstrap glfw VulkanMemoryAllocator imgui)
 target_include_directories(engine PUBLIC public)
 target_include_directories(engine PRIVATE private)
 
@@ -50,7 +70,6 @@ foreach(SHADER IN LISTS GLSL_SHADERS)
 endforeach()
 
 add_executable(test demos/test.cpp)
-target_include_directories(test PUBLIC ${engine_INCLUDE_DIRECTORIES})
 target_link_libraries(test engine)
 add_custom_target(shaders ALL DEPENDS ${SPV_SHADERS})
 add_dependencies(test shaders)

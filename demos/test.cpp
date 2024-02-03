@@ -156,6 +156,8 @@ class Test final : public ignis::IEngine {
         double time = getTime();
         auto eye = glm::normalize(glm::vec3 { sin(time), cos(time / 3.f), cos(time) }) * 10.0f;
         m_camera.view = glm::lookAt(eye, {}, { 0.0f, 1.0f, 0.0f });
+
+        ImGui::ShowDemoWindow();
     }
 
     std::string getName()       { return "Test"; }
