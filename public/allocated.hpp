@@ -67,16 +67,40 @@ struct Allocated<vk::Buffer> : public BaseAllocated {
     vk::Buffer& operator  *() { return  m_inner; }
     vk::Buffer* operator ->() { return &m_inner; }
 
-    vk::Result stagedCopyData(void* data, uint32_t size);
+    /**
+     * @brief Copies data via a staging buffer
+     * 
+     * @param fence The fence to signal for an asynchronous staged copy.
+     *  If one is provided, the function will be called asynchronously
+     * @param signalSemaphore The semaphore to signal for an asynchronous staged copy.
+     *  If one is provided, the function will be called asynchronously
+     */
+    vk::Result stagedCopyData(void* data, uint32_t size, vk::Fence fence = {}, vk::Semaphore signalSemaphore = {});
 
+    /**
+     * @brief Copies data via a staging buffer
+     * 
+     * @param fence The fence to signal for an asynchronous staged copy.
+     *  If one is provided, the function will be called asynchronously
+     * @param signalSemaphore The semaphore to signal for an asynchronous staged copy.
+     *  If one is provided, the function will be called asynchronously
+     */
     template<typename T>
-    vk::Result stagedCopyData(T* data, uint32_t count) {
-        return stagedCopyData(static_cast<void*>(data), count * sizeof(T));
+    vk::Result stagedCopyData(T* data, uint32_t count, vk::Fence fence = {}, vk::Semaphore signalSemaphore = {}) {
+        return stagedCopyData(static_cast<void*>(data), count * sizeof(T), fence, signalSemaphore);
     }
 
+    /**
+     * @brief Copies data via a staging buffer
+     * 
+     * @param fence The fence to signal for an asynchronous staged copy.
+     *  If one is provided, the function will be called asynchronously
+     * @param signalSemaphore The semaphore to signal for an asynchronous staged copy.
+     *  If one is provided, the function will be called asynchronously
+     */
     template<typename T>
-    vk::Result stagedCopyData(std::vector<T> data) {
-        return stagedCopyData<T>(data.data(), data.size());
+    vk::Result stagedCopyData(std::vector<T> data, vk::Fence fence = {}, vk::Semaphore signalSemaphore = {}) {
+        return stagedCopyData<T>(data.data(), data.size(), fence, signalSemaphore);
     }
 };
 

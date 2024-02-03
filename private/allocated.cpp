@@ -3,6 +3,8 @@
 #include "bufferBuilder.hpp"
 #include "common.hpp"
 
+#include <thread>
+
 namespace ignis {
 
 VmaAllocator BaseAllocated::getAllocator() {
@@ -38,26 +40,47 @@ vk::Result BaseAllocated::copyData(void* data, uint32_t size) {
     return flush();
 }
 
-vk::Result Allocated<vk::Buffer>::stagedCopyData(void* data, uint32_t size) {
-    ResourceScope tempScope;
+vk::Result Allocated<vk::Buffer>::stagedCopyData(void* data, uint32_t size, vk::Fence fence, vk::Semaphore signalSemaphore) {
+    bool async = fence != VK_NULL_HANDLE || signalSemaphore != VK_NULL_HANDLE;
 
-    vk::ResultValue<Allocated<vk::Buffer>> stagingBuffer = BufferBuilder { tempScope }
-        .setAllocationUsage(VMA_MEMORY_USAGE_CPU_TO_GPU)
-        .setBufferUsage(vk::BufferUsageFlagBits::eTransferSrc)
-        .setSizeBuildAndCopyData(data, size);
-    if (stagingBuffer.result != vk::Result::eSuccess) return stagingBuffer.result;
-
+    ResourceScope* tempScope = new ResourceScope();
     IEngine& engine = IEngine::get();
     vk::Device device = engine.getDevice();
 
-    vk::Fence fence = device.createFence(vk::FenceCreateInfo {});
-    tempScope.addDeferredCleanupFunction([=]() { device.destroyFence(fence); });
+    if (fence == VK_NULL_HANDLE) {
+        fence = device.createFence(vk::FenceCreateInfo {});
+        tempScope->addDeferredCleanupFunction([=]() { device.destroyFence(fence); });
+    }
+
+    vk::ResultValue<Allocated<vk::Buffer>> stagingBuffer = BufferBuilder { *tempScope }
+        .setAllocationUsage(VMA_MEMORY_USAGE_CPU_TO_GPU)
+        .setBufferUsage(vk::BufferUsageFlagBits::eTransferSrc)
+        .setSizeBuildAndCopyData(data, size);
+    
+    if (stagingBuffer.result != vk::Result::eSuccess) {
+        delete tempScope;
+        return stagingBuffer.result;
+    }
 
     vk::CommandBuffer cmd = engine.beginOneTimeCommandBuffer(vkb::QueueType::graphics);
     cmd.copyBuffer(*stagingBuffer.value, m_inner, vk::BufferCopy {}.setSize(size));
-    engine.submitOneTimeCommandBuffer(cmd, vkb::QueueType::graphics, vk::SubmitInfo {}, fence);
+    engine.submitOneTimeCommandBuffer(cmd, vkb::QueueType::graphics,
+        vk::SubmitInfo {}.setSignalSemaphores(signalSemaphore),
+        fence);
 
-    return device.waitForFences(fence, true, UINT64_MAX);
+    if (async) {
+        std::thread cleanUpAndSignalFence ([=, device = device, fence = fence]() {
+            device.waitForFences(fence, true, UINT64_MAX);
+            delete tempScope;
+        });
+        cleanUpAndSignalFence.detach();
+
+        return vk::Result::eSuccess;
+    } else {
+        vk::Result result = device.waitForFences(fence, true, UINT64_MAX);
+        delete tempScope;
+        return result;
+    }
 }
 
 }
