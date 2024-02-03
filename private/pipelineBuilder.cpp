@@ -167,7 +167,7 @@ GraphicsPipelineBuilder& GraphicsPipelineBuilder::useDefaults() {
 
     m_rasterizationState = vk::PipelineRasterizationStateCreateInfo {}
         .setCullMode(vk::CullModeFlagBits::eBack)
-        .setFrontFace(vk::FrontFace::eClockwise)
+        .setFrontFace(vk::FrontFace::eCounterClockwise)
         .setPolygonMode(vk::PolygonMode::eFill)
         .setLineWidth(1.f)
         ;

@@ -89,7 +89,7 @@ void IEngine::init() {
     glm::ivec2 initialWindowSize = getInitialWindowSize();
     glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
     glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
-    // glfwWindowHint(GLFW_COCOA_RETINA_FRAMEBUFFER, GLFW_FALSE);
+    // glfwWindowHint(GLFW_COCOA_RETINA_FRAMEBUFFER, GLFW_FALSE); -- ImGui does not work with non-retina windows on MacOS >:(
     m_window = glfwCreateWindow(
         initialWindowSize.x, initialWindowSize.y,
         getName().c_str(), nullptr, nullptr

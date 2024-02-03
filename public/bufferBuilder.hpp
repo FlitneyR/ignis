@@ -20,7 +20,7 @@ public:
     BufferBuilder& setSize(uint32_t size);
     BufferBuilder& setBufferUsage(vk::BufferUsageFlags usage);
 
-    vk::ResultValue<Allocated<vk::Buffer>> setSizeBuildAndCopyData(void* data, uint32_t size) {
+    vk::ResultValue<Allocated<vk::Buffer>> setSizeBuildAndCopyData(const void* data, uint32_t size) {
         setSize(size);
 
         vk::ResultValue<Allocated<vk::Buffer>> ret = build();
@@ -32,7 +32,7 @@ public:
 
     template<typename T>
     vk::ResultValue<Allocated<vk::Buffer>> setSizeBuildAndCopyData(T* data, uint32_t count) {
-        return setSizeBuildAndCopyData(static_cast<void*>(data), count * sizeof(T));
+        return setSizeBuildAndCopyData(static_cast<const void*>(data), count * sizeof(T));
     }
 
     template<typename T>

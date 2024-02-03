@@ -15,9 +15,30 @@ struct Instance {
     glm::mat4 transform;
 };
 
-struct Camera {
+struct CameraUniform {
     glm::mat4 view;
     glm::mat4 perspective;
+};
+
+struct Camera {
+    glm::vec3 position { 0.f, 0.f, 0.f };
+    glm::vec3 forward  { 0.f, 1.f, 0.f };
+    glm::vec3 up       { 0.f, 0.f, 1.f };
+
+    float near = 0.01f;
+    float far = 1'000.f;
+    float fov = 45.f;
+
+    CameraUniform getUniformData() {
+        auto uniform = CameraUniform {
+            .view = glm::lookAt(position, position + forward, up),
+            .perspective = glm::perspectiveFov(glm::radians(fov), 1280.f, 720.f, near, far),
+        };
+
+        uniform.perspective = glm::scale(uniform.perspective, { 1.f, -1.f, 1.f});
+
+        return uniform;
+    }
 };
 
 class Test final : public ignis::IEngine {
@@ -29,10 +50,7 @@ class Test final : public ignis::IEngine {
     std::vector<ignis::Allocated<vk::Buffer>> m_cameraBuffers;
     std::vector<vk::DescriptorSet>            m_cameraDescriptorSets;
 
-    Camera m_camera {
-        .view = glm::translate(glm::mat4 { 1.f }, { 0.f, 0.f, -5.f }),
-        .perspective = glm::perspectiveFov(glm::radians(45.f), 1280.f, 720.f, 0.01f, 1000.f),
-    };
+    Camera m_camera;
 
     vk::Pipeline m_pipeline;
     vk::PipelineLayout m_pipelineLayout;
@@ -105,11 +123,12 @@ class Test final : public ignis::IEngine {
                 .addQueueFamilyIndices({ getQueueIndex(vkb::QueueType::graphics) })
                 .setAllocationUsage(VMA_MEMORY_USAGE_CPU_TO_GPU)
                 .setBufferUsage(vk::BufferUsageFlagBits::eUniformBuffer)
-                .setSizeBuildAndCopyData(m_camera), "Failed to create a camera uniform buffer"));
+                .setSize<CameraUniform>(1)
+                .build(), "Failed to create a camera uniform buffer"));
             
             auto bufferInfo = vk::DescriptorBufferInfo {}
                 .setBuffer(*m_cameraBuffers.back())
-                .setRange(sizeof(Camera));
+                .setRange(sizeof(CameraUniform));
 
             getDevice().updateDescriptorSets(vk::WriteDescriptorSet {}
                 .setBufferInfo(bufferInfo)
@@ -140,7 +159,7 @@ class Test final : public ignis::IEngine {
     }
     
     void recordDrawCommands(vk::CommandBuffer cmd) {
-        m_cameraBuffers[getInFlightIndex()].copyData(m_camera);
+        m_cameraBuffers[getInFlightIndex()].copyData(m_camera.getUniformData());
 
         cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, m_pipeline);
 
@@ -153,11 +172,26 @@ class Test final : public ignis::IEngine {
     }
 
     void update(double deltaTime) {
-        double time = getTime();
-        auto eye = glm::normalize(glm::vec3 { sin(time), cos(time / 3.f), cos(time) }) * 10.0f;
-        m_camera.view = glm::lookAt(eye, {}, { 0.0f, 1.0f, 0.0f });
+        static float yaw      = 0.f;
+        static float pitch    = 0.f;
+        static float distance = 5.f;
 
-        ImGui::ShowDemoWindow();
+        ImGui::Begin("Scene");
+
+        if (ImGui::CollapsingHeader("Camera")) {
+            ImGui::DragFloat("FOV", &m_camera.fov, 1.0f, 30.f, 110.f);
+            ImGui::DragFloat("Yaw", &yaw);
+            ImGui::DragFloat("Pitch", &pitch, 1.f, -85.f, 85.f);
+            ImGui::DragFloat("Distance", &distance, 0.1f, 1.0f, 10.0f);
+        }
+
+        ImGui::End();
+
+        m_camera.position = glm::rotate(glm::radians(yaw),   glm::vec3 {  0.f, 0.f, 1.f })
+                          * glm::rotate(glm::radians(pitch), glm::vec3 { -1.f, 0.f, 0.f })
+                          * glm::vec4 { 0.f, -distance, 0.f, 1.f };
+        
+        m_camera.forward = -m_camera.position;
     }
 
     std::string getName()       { return "Test"; }

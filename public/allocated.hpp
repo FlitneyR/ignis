@@ -18,15 +18,15 @@ public:
     vk::ResultValue<void*> map();
     void unmap();
     vk::Result flush();
-    vk::Result copyData(void* data, uint32_t size);
+    vk::Result copyData(const void* data, uint32_t size);
 
     template<typename T>
-    vk::Result copyData(T& data) {
+    vk::Result copyData(const T& data) {
         return copyData(&data, sizeof(T));
     }
 
     template<typename T>
-    vk::Result copyData(std::vector<T>& data) {
+    vk::Result copyData(const std::vector<T>& data) {
         return copyData(data.data(), data.size() * sizeof(T));
     }
 };
@@ -75,7 +75,7 @@ struct Allocated<vk::Buffer> : public BaseAllocated {
      * @param signalSemaphore The semaphore to signal for an asynchronous staged copy.
      *  If one is provided, the function will be called asynchronously
      */
-    vk::Result stagedCopyData(void* data, uint32_t size, vk::Fence fence = {}, vk::Semaphore signalSemaphore = {});
+    vk::Result stagedCopyData(const void* data, uint32_t size, vk::Fence fence = {}, vk::Semaphore signalSemaphore = {});
 
     /**
      * @brief Copies data via a staging buffer
@@ -86,7 +86,7 @@ struct Allocated<vk::Buffer> : public BaseAllocated {
      *  If one is provided, the function will be called asynchronously
      */
     template<typename T>
-    vk::Result stagedCopyData(T* data, uint32_t count, vk::Fence fence = {}, vk::Semaphore signalSemaphore = {}) {
+    vk::Result stagedCopyData(const T* data, uint32_t count, vk::Fence fence = {}, vk::Semaphore signalSemaphore = {}) {
         return stagedCopyData(static_cast<void*>(data), count * sizeof(T), fence, signalSemaphore);
     }
 
@@ -99,7 +99,7 @@ struct Allocated<vk::Buffer> : public BaseAllocated {
      *  If one is provided, the function will be called asynchronously
      */
     template<typename T>
-    vk::Result stagedCopyData(std::vector<T> data, vk::Fence fence = {}, vk::Semaphore signalSemaphore = {}) {
+    vk::Result stagedCopyData(const std::vector<T>& data, vk::Fence fence = {}, vk::Semaphore signalSemaphore = {}) {
         return stagedCopyData<T>(data.data(), data.size(), fence, signalSemaphore);
     }
 };

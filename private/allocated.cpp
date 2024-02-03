@@ -32,7 +32,7 @@ vk::Result BaseAllocated::flush() {
     return vk::Result { vmaFlushAllocation(getAllocator(), m_allocation, info.offset, info.size) };
 }
 
-vk::Result BaseAllocated::copyData(void* data, uint32_t size) {
+vk::Result BaseAllocated::copyData(const void* data, uint32_t size) {
     vk::ResultValue<void*> mapping = map();
     if (mapping.result != vk::Result::eSuccess) return mapping.result;
     std::memcpy(mapping.value, data, size);
@@ -40,7 +40,7 @@ vk::Result BaseAllocated::copyData(void* data, uint32_t size) {
     return flush();
 }
 
-vk::Result Allocated<vk::Buffer>::stagedCopyData(void* data, uint32_t size, vk::Fence fence, vk::Semaphore signalSemaphore) {
+vk::Result Allocated<vk::Buffer>::stagedCopyData(const void* data, uint32_t size, vk::Fence fence, vk::Semaphore signalSemaphore) {
     bool async = fence != VK_NULL_HANDLE || signalSemaphore != VK_NULL_HANDLE;
 
     // using a pointer here so it can be deleted from another thread
