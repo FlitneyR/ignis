@@ -25,6 +25,9 @@ public:
     vk::SwapchainKHR   getSwapchain()      const { return { m_swapchain }; }
     uint32_t           getInFlightIndex()  const { return m_inFlightFrameIndex; }
 
+    vk::CommandBuffer beginOneTimeCommandBuffer(vkb::QueueType queueType);
+    void submitOneTimeCommandBuffer(vk::CommandBuffer cmd, vkb::QueueType queueType, vk::SubmitInfo submitInfo, vk::Fence fence = {});
+
     ResourceScope&             getGlobalResourceScope()   { return m_globalResourceScope; }
     vk::DispatchLoaderDynamic& getDynamicDispatchLoader() { return m_dispatchLoaderDynamic; }
 

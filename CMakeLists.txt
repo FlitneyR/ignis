@@ -28,7 +28,8 @@ add_library(engine
     private/bufferBuilder.cpp
     private/image.cpp
     private/allocated.cpp
-    private/builder.cpp)
+    private/builder.cpp
+    private/descriptorSetBuilder.cpp)
 
 target_link_libraries(engine PUBLIC Vulkan::Vulkan vk-bootstrap::vk-bootstrap glfw VulkanMemoryAllocator)
 target_include_directories(engine PUBLIC public)

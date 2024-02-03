@@ -22,6 +22,23 @@ IEngine& IEngine::get() {
     return *s_singleton;
 }
 
+vk::CommandBuffer IEngine::beginOneTimeCommandBuffer(vkb::QueueType queueType) {
+    getCommandPool(queueType);
+    vk::CommandBuffer cmd = getDevice().allocateCommandBuffers(vk::CommandBufferAllocateInfo {}
+        .setCommandBufferCount(1)
+        .setCommandPool(getCommandPool(queueType))
+        .setLevel(vk::CommandBufferLevel::ePrimary))[0];
+
+    cmd.begin(vk::CommandBufferBeginInfo {}.setFlags(vk::CommandBufferUsageFlagBits::eOneTimeSubmit));
+
+    return cmd;
+}
+
+void IEngine::submitOneTimeCommandBuffer(vk::CommandBuffer cmd, vkb::QueueType queueType, vk::SubmitInfo submitInfo, vk::Fence fence) {
+    cmd.end();
+    getQueue(queueType).submit(submitInfo.setCommandBuffers(cmd), fence);
+}
+
 void IEngine::main() {
     init();
     setup();

@@ -1,4 +1,5 @@
 #include "image.hpp"
+#include "engine.hpp"
 
 namespace ignis {
 
@@ -77,7 +78,7 @@ void ImageLayoutTransition::execute(vk::CommandBuffer cmd) {
 
     for (uint32_t mipLevel = mipLevelFrom; mipLevel < mipLevelTo; mipLevel++)
     for (uint32_t arrayLayer = arrayLayerFrom; arrayLayer < arrayLayerTo; arrayLayer++) {
-        r_image.layoutAt(mipLevel, arrayLayer) = m_newLayout;
+        r_image.layout(mipLevel, arrayLayer) = m_newLayout;
     }
 }
 
@@ -85,16 +86,16 @@ ImageLayoutTransition Image::transitionLayout(uint32_t baseMipLevel, uint32_t le
     return ImageLayoutTransition { *this }
         .setMipLevelRange(baseMipLevel, levelCount)
         .setArrayLayerRange(baseArrayLayer, layerCount)
-        .setOldLayout(layoutAt(baseMipLevel, baseArrayLayer));
+        .setOldLayout(layout(baseMipLevel, baseArrayLayer));
 }
 
 Image::Image(
-    vk::Image                    image,
-    vk::Format                   format,
-    vk::Extent3D                 extent,
-    uint32_t                     mipLevelCount,
-    uint32_t                     arrayLayerCount,
-    vk::ImageLayout              initialLayout
+    vk::Image       image,
+    vk::Format      format,
+    vk::Extent3D    extent,
+    uint32_t        mipLevelCount,
+    uint32_t        arrayLayerCount,
+    vk::ImageLayout initialLayout
 ) : m_image(image),
     m_format(format),
     m_extent(extent),
@@ -102,7 +103,7 @@ Image::Image(
     m_mipLevelCount(mipLevelCount),
     m_imageLayouts(mipLevelCount * arrayLayerCount, initialLayout)
 {}
-vk::ImageLayout& Image::layoutAt(uint32_t mipLevel, uint32_t arrayLayer) {
+vk::ImageLayout& Image::layout(uint32_t mipLevel, uint32_t arrayLayer) {
     return m_imageLayouts[mipLevel + arrayLayer * m_mipLevelCount];
 }
 

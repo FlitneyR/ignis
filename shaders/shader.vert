@@ -6,7 +6,7 @@ layout (location = 2) in mat4 v_transform;
 
 layout (location = 0) out vec4 color;
 
-layout (push_constant) uniform PushConstant {
+layout (set = 0, binding = 0) uniform PushConstant {
     mat4 view;
     mat4 projection;
 } pc;

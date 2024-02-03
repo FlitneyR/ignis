@@ -70,6 +70,7 @@ public:
     vk::Format                   getFormat()          { return m_format; }
     uint32_t                     getMipLevelCount()   { return m_mipLevelCount; }
     uint32_t                     getArrayLayerCount() { return m_arrayLayerCount; }
+    glm::ivec3                   getSize()            { return { m_extent.width, m_extent.height, m_extent.depth };}
     vk::Extent3D                 getExtent()          { return m_extent; }
 
     ImageLayoutTransition transitionLayout(
@@ -78,7 +79,7 @@ public:
         uint32_t baseArrayLayer = 0,
         uint32_t layerCount = 1);
 
-    vk::ImageLayout& layoutAt(uint32_t mipLevel = 0, uint32_t arrayLayer = 0);
+    vk::ImageLayout& layout(uint32_t mipLevel = 0, uint32_t arrayLayer = 0);
 };
 
 class ImageBuilder : public IBuilder<Allocated<Image>> {

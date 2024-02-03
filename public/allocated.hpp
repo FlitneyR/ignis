@@ -7,6 +7,28 @@ namespace ignis {
 class BaseAllocated {
 protected:
     VmaAllocator getAllocator();
+
+public:
+    BaseAllocated() = default;
+    BaseAllocated(VmaAllocation allocation) : m_allocation(allocation) {}
+
+    VmaAllocation m_allocation;
+
+    VmaAllocationInfo getInfo();
+    vk::ResultValue<void*> map();
+    void unmap();
+    vk::Result flush();
+    vk::Result copyData(void* data, uint32_t size);
+
+    template<typename T>
+    vk::Result copyData(T& data) {
+        return copyData(&data, sizeof(T));
+    }
+
+    template<typename T>
+    vk::Result copyData(std::vector<T>& data) {
+        return copyData(data.data(), data.size() * sizeof(T));
+    }
 };
 
 /**
@@ -15,56 +37,46 @@ protected:
 template<typename Inner>
 struct Allocated : public BaseAllocated {
     Inner m_inner;
-    VmaAllocation m_allocation;
 
     Allocated() = default;
 
     Allocated(
         Inner&& inner,
         VmaAllocation allocation
-    ) : m_inner(std::move(inner)),
-        m_allocation(allocation)
+    ) : BaseAllocated(allocation),
+        m_inner(std::move(inner))
     {}
 
     Inner& operator  *() { return  m_inner; }
     Inner* operator ->() { return &m_inner; }
+};
 
-    VmaAllocationInfo getInfo() {
-        VmaAllocationInfo info;
-        vmaGetAllocationInfo(getAllocator(), m_allocation, &info);
-        return info;
-    }
+template<>
+struct Allocated<vk::Buffer> : public BaseAllocated {
+    vk::Buffer m_inner;
 
-    vk::ResultValue<void*> map() {
-        void* data;
-        vk::Result result { vmaMapMemory(getAllocator(), m_allocation, &data) };
-        return vk::ResultValue { result, data };
-    }
+    Allocated() = default;
 
-    void unmap() {
-        vmaUnmapMemory(getAllocator(), m_allocation);
-    }
+    Allocated(
+        vk::Buffer inner,
+        VmaAllocation allocation
+    ) : BaseAllocated(allocation),
+        m_inner(inner)
+    {}
 
-    vk::Result flush() {
-        VmaAllocationInfo info = getInfo();
-        return vmaFlushAllocation(getAllocator(), m_allocation, info.offset, info.size);
-    }
+    vk::Buffer& operator  *() { return  m_inner; }
+    vk::Buffer* operator ->() { return &m_inner; }
 
-    vk::Result copyData(void* data, uint32_t size) {
-        vk::ResultValue<void*> mapping = map();
-        if (mapping.result != vk::Result::eSuccess) return mapping.result;
+    vk::Result stagedCopyData(void* data, uint32_t size);
 
-        std::memcpy(mapping.value, data, size);
-
-        vk::Result result = flush();
-        unmap();
-
-        return result;
+    template<typename T>
+    vk::Result stagedCopyData(T* data, uint32_t count) {
+        return stagedCopyData(static_cast<void*>(data), count * sizeof(T));
     }
 
     template<typename T>
-    vk::Result copyData(std::vector<T> data) {
-        return copyData(data.data(), data.size() * sizeof(T));
+    vk::Result stagedCopyData(std::vector<T> data) {
+        return stagedCopyData<T>(data.data(), data.size());
     }
 };
 

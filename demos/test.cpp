@@ -4,6 +4,7 @@
 #include "allocated.hpp"
 #include "bufferBuilder.hpp"
 #include "common.hpp"
+#include "descriptorSetBuilder.hpp"
 
 struct Vertex {
     glm::vec3 position;
@@ -23,6 +24,10 @@ class Test final : public ignis::IEngine {
     ignis::Allocated<vk::Buffer> m_vertexBuffer;
     ignis::Allocated<vk::Buffer> m_indexBuffer;
     ignis::Allocated<vk::Buffer> m_instanceBuffer;
+
+    vk::DescriptorSetLayout m_cameraDescriptorSetLayout;
+    std::vector<ignis::Allocated<vk::Buffer>> m_cameraBuffers;
+    std::vector<vk::DescriptorSet>            m_cameraDescriptorSets;
 
     Camera m_camera {
         .view = glm::translate(glm::mat4 { 1.f }, { 0.f, 0.f, -5.f }),
@@ -70,19 +75,51 @@ class Test final : public ignis::IEngine {
             .setAllocationUsage(VMA_MEMORY_USAGE_CPU_TO_GPU);
 
         m_vertexBuffer = ignis::getValue(ignis::BufferBuilder { bufferBuilder }
-            .setSizeBuildAndCopyData(m_vertices), "Failed to createVertexBuffer");
+            .setSizeBuildAndStagedCopyData(m_vertices), "Failed to createVertexBuffer");
 
         m_instanceBuffer = ignis::getValue(ignis::BufferBuilder { bufferBuilder }
-            .setSizeBuildAndCopyData(m_instances), "Failed to create instance buffer");
+            .setSizeBuildAndStagedCopyData(m_instances), "Failed to create instance buffer");
 
         m_indexBuffer = ignis::getValue(ignis::BufferBuilder { bufferBuilder }
             .setBufferUsage(vk::BufferUsageFlagBits::eIndexBuffer)
-            .setSizeBuildAndCopyData(m_indices), "Failed to create index buffer");
+            .setSizeBuildAndStagedCopyData(m_indices), "Failed to create index buffer");
+        
+        m_cameraDescriptorSetLayout = ignis::DescriptorLayoutBuilder { getGlobalResourceScope() }
+            .addBinding(vk::DescriptorSetLayoutBinding {}
+                .setBinding(0)
+                .setDescriptorType(vk::DescriptorType::eUniformBuffer)
+                .setDescriptorCount(1)
+                .setStageFlags(vk::ShaderStageFlagBits::eAllGraphics))
+            .build();
+        
+        m_cameraDescriptorSets = ignis::DescriptorSetBuilder { getGlobalResourceScope() }
+            .setPool(ignis::DescriptorPoolBuilder { getGlobalResourceScope() }
+                .setMaxSetCount(s_framesInFlight)
+                .addPoolSize({ vk::DescriptorType::eUniformBuffer, s_framesInFlight })
+                .build())
+            .addLayouts(m_cameraDescriptorSetLayout, s_framesInFlight)
+            .build();
+
+        for (int i = 0; i < s_framesInFlight; i++) {
+            m_cameraBuffers.push_back(ignis::getValue(ignis::BufferBuilder { getGlobalResourceScope() }
+                .addQueueFamilyIndices({ getQueueIndex(vkb::QueueType::graphics) })
+                .setAllocationUsage(VMA_MEMORY_USAGE_CPU_TO_GPU)
+                .setBufferUsage(vk::BufferUsageFlagBits::eUniformBuffer)
+                .setSizeBuildAndCopyData(m_camera), "Failed to create a camera uniform buffer"));
+            
+            auto bufferInfo = vk::DescriptorBufferInfo {}
+                .setBuffer(*m_cameraBuffers.back())
+                .setRange(sizeof(Camera));
+
+            getDevice().updateDescriptorSets(vk::WriteDescriptorSet {}
+                .setBufferInfo(bufferInfo)
+                .setDescriptorCount(1)
+                .setDescriptorType(vk::DescriptorType::eUniformBuffer)
+                .setDstSet(m_cameraDescriptorSets[i]), {});
+        }
 
         m_pipelineLayout = ignis::PipelineLayoutBuilder { getGlobalResourceScope() }
-            .addPushConstantRange(vk::PushConstantRange {}
-                .setSize(sizeof(Camera))
-                .setStageFlags(vk::ShaderStageFlagBits::eAllGraphics))
+            .addSet(m_cameraDescriptorSetLayout)
             .build();
 
         m_pipeline = ignis::getValue(ignis::GraphicsPipelineBuilder { m_pipelineLayout, getGlobalResourceScope() }
@@ -103,16 +140,21 @@ class Test final : public ignis::IEngine {
     }
     
     void recordDrawCommands(vk::CommandBuffer cmd) {
+        m_cameraBuffers[getInFlightIndex()].copyData(m_camera);
+
         cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, m_pipeline);
+
         cmd.bindVertexBuffers(0, { *m_vertexBuffer, *m_instanceBuffer }, { 0, 0 });
         cmd.bindIndexBuffer(*m_indexBuffer, 0, vk::IndexType::eUint16);
-        cmd.pushConstants<Camera>(m_pipelineLayout, vk::ShaderStageFlagBits::eAllGraphics, 0, m_camera);
+        cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, m_pipelineLayout,
+            0, m_cameraDescriptorSets[getInFlightIndex()], {});
+        
         cmd.drawIndexed(m_indices.size(), m_instances.size(), 0, 0, 0);
     }
 
     void update(double deltaTime) {
         double time = getTime();
-        auto eye = glm::vec3 { sin(time), 0.0f, cos(time) } * 5.0f;
+        auto eye = glm::normalize(glm::vec3 { sin(time), cos(time / 3.f), cos(time) }) * 10.0f;
         m_camera.view = glm::lookAt(eye, {}, { 0.0f, 1.0f, 0.0f });
     }
 
