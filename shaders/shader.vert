@@ -6,12 +6,12 @@ layout (location = 2) in mat4 v_transform;
 
 layout (location = 0) out vec4 color;
 
-layout (set = 0, binding = 0) uniform PushConstant {
+layout (set = 0, binding = 0) uniform Camera {
     mat4 view;
     mat4 projection;
-} pc;
+} camera;
 
 void main() {
     color = v_color;
-    gl_Position = pc.projection * pc.view * v_transform * v_position;
+    gl_Position = camera.projection * camera.view * v_transform * v_position;
 }

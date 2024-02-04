@@ -40,7 +40,6 @@ struct Camera {
             .view = glm::lookAt(position, position + forward, up),
             .perspective = glm::perspective(glm::radians(fov), swapchainSize.x / swapchainSize.y, near, far),
         };
-
         uniform.perspective = glm::scale(uniform.perspective, { 1.f, -1.f, 1.f});
 
         return uniform;
@@ -54,11 +53,14 @@ class Test final : public ignis::IEngine {
 
     Camera m_camera;
 
+    ignis::Allocated<ignis::Image> m_texture;
+    ignis::DescriptorSetCollection m_textureDescriptorSet;
+
     vk::Pipeline m_pipeline;
     vk::PipelineLayout m_pipelineLayout;
 
     std::vector<Vertex> m_vertices {
-        { { -0.5f, -0.5f, -0.5f }, { 1.0f, 1.0f, 1.0f, 1.0f } },
+        { { -0.5f, -0.5f, -0.5f }, { 0.0f, 0.0f, 0.0f, 1.0f } },
         { { -0.5f, -0.5f,  0.5f }, { 0.0f, 0.0f, 1.0f, 1.0f } },
         { { -0.5f,  0.5f, -0.5f }, { 0.0f, 1.0f, 0.0f, 1.0f } },
         { { -0.5f,  0.5f,  0.5f }, { 0.0f, 1.0f, 1.0f, 1.0f } },
@@ -103,6 +105,45 @@ class Test final : public ignis::IEngine {
         m_indexBuffer = ignis::getValue(ignis::BufferBuilder { bufferBuilder }
             .setBufferUsage(vk::BufferUsageFlagBits::eIndexBuffer)
             .setSizeBuildAndStagedCopyData(m_indices), "Failed to create index buffer");
+
+        m_textureDescriptorSet = ignis::DescriptorSetBuilder { getGlobalResourceScope() }
+            .setPool(ignis::DescriptorPoolBuilder { getGlobalResourceScope() }
+                .setMaxSetCount(1)
+                .addPoolSize({ vk::DescriptorType::eCombinedImageSampler, 1 })
+                .build())
+            .addLayouts(ignis::DescriptorLayoutBuilder { getGlobalResourceScope() }
+                .addBinding(vk::DescriptorSetLayoutBinding {}
+                    .setBinding(0)
+                    .setDescriptorType(vk::DescriptorType::eCombinedImageSampler)
+                    .setDescriptorCount(1)
+                    .setStageFlags(vk::ShaderStageFlagBits::eAllGraphics))
+                .build())
+            .build();
+        
+        m_texture = ignis::ImageBuilder { getGlobalResourceScope() }
+            .setInitialLayout(vk::ImageLayout::eShaderReadOnlyOptimal)
+            .load("../demos/resources/test.jpg");
+        
+        {
+            vk::Sampler sampler = getDevice().createSampler(vk::SamplerCreateInfo {});
+            getGlobalResourceScope().addDeferredCleanupFunction([device = getDevice(), sampler]() {
+                device.destroySampler(sampler);
+            });
+
+            auto imageInfo = vk::DescriptorImageInfo {}
+                .setImageLayout(m_texture->layout())
+                .setImageView(ignis::ImageViewBuilder { *m_texture, getGlobalResourceScope() }.build())
+                .setSampler(sampler);
+            
+            getDevice().updateDescriptorSets(
+                vk::WriteDescriptorSet {}
+                    .setDescriptorCount(1)
+                    .setDescriptorType(vk::DescriptorType::eCombinedImageSampler)
+                    .setDstSet(m_textureDescriptorSet.getSet(0))
+                    .setImageInfo(imageInfo),
+                {}
+            );
+        }
         
         m_camera.m_descriptorSets = ignis::DescriptorSetBuilder { getGlobalResourceScope() }
             .setPool(ignis::DescriptorPoolBuilder { getGlobalResourceScope() }
@@ -139,6 +180,7 @@ class Test final : public ignis::IEngine {
 
         m_pipelineLayout = ignis::PipelineLayoutBuilder { getGlobalResourceScope() }
             .addSet(m_camera.m_descriptorSets.getLayout())
+            .addSet(m_textureDescriptorSet.getLayout())
             .build();
 
         m_pipeline = ignis::getValue(ignis::GraphicsPipelineBuilder { m_pipelineLayout, getGlobalResourceScope() }
@@ -166,8 +208,12 @@ class Test final : public ignis::IEngine {
 
         cmd.bindVertexBuffers(0, { *m_vertexBuffer, *m_instanceBuffer }, { 0, 0 });
         cmd.bindIndexBuffer(*m_indexBuffer, 0, vk::IndexType::eUint16);
+
         cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, m_pipelineLayout,
             0, m_camera.m_descriptorSets.getSet(getInFlightIndex()), {});
+        
+        cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, m_pipelineLayout,
+            1, m_textureDescriptorSet.getSet(), {});
         
         cmd.drawIndexed(m_indices.size(), m_instances.size(), 0, 0, 0);
     }
@@ -181,9 +227,6 @@ class Test final : public ignis::IEngine {
 
         ImGui::Begin("Scene");
 
-        if (ImGui::Button("Add message to log"))
-            getLog().addEntry({ "Test", ignis::Log::Type::Info, "Button pressed" });
-
         if (ImGui::TreeNode("Camera")) {
             ImGui::DragFloat("FOV", &m_camera.fov, 1.0f, 30.f, 110.f);
             ImGui::DragFloat("Yaw", &yaw);
@@ -193,8 +236,8 @@ class Test final : public ignis::IEngine {
         }
 
         m_camera.position = glm::rotate(glm::radians(yaw),   glm::vec3 {  0.f, 0.f, 1.f })
-                        * glm::rotate(glm::radians(pitch), glm::vec3 { -1.f, 0.f, 0.f })
-                        * glm::vec4 { 0.f, -distance, 0.f, 1.f };
+                          * glm::rotate(glm::radians(pitch), glm::vec3 { -1.f, 0.f, 0.f })
+                          * glm::vec4 { 0.f, -distance, 0.f, 1.f };
         m_camera.forward = -m_camera.position;
 
         if (ImGui::TreeNode("Instances")) {

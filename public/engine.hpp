@@ -89,8 +89,8 @@ private:
 
     Log m_log;
 
-    ResourceScope m_globalResourceScope;
-    ResourceScope m_untilWindowSizeChangeScope;
+    ResourceScope m_globalResourceScope        { "Global" };
+    ResourceScope m_untilWindowSizeChangeScope { "Until window size change" };
 
     GLFWwindow*   m_window;
     VmaAllocator  m_allocator;

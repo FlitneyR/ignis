@@ -48,8 +48,11 @@ void Log::draw() {
 
         ImGui::EndTable();
     }
-    ImGui::EndChild();
 
+    if(ImGui::GetScrollY() >= ImGui::GetScrollMaxY())
+        ImGui::SetScrollHereY(1.0f);
+
+    ImGui::EndChild();
     ImGui::End();
 }
 

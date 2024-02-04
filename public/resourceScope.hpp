@@ -11,6 +11,8 @@ namespace ignis {
  *        then later executes those commands in reverse via void executeDeferredCleanupFunctions()
  */
 class ResourceScope {
+    std::string m_name;
+
     std::list<std::function<void()>> m_deferredCleanupCommands;
 
     ResourceScope(ResourceScope&& other) = default;
@@ -20,7 +22,7 @@ class ResourceScope {
     ResourceScope& operator =(const ResourceScope& other) = delete;
 
 public:
-    ResourceScope();
+    ResourceScope(std::string name = "");
     ~ResourceScope();
 
     void addDeferredCleanupFunction(std::function<void()> func);

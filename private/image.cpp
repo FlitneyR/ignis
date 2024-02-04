@@ -1,12 +1,18 @@
 #include "image.hpp"
 #include "engine.hpp"
+#include "bufferBuilder.hpp"
+#include "common.hpp"
+
+#include "external/stb_image.h"
 
 namespace ignis {
 
 ImageLayoutTransition::ImageLayoutTransition(
     Image& image
 ) : r_image(image)
-{}
+{
+    setAspectMask(image.getAspectMask());
+}
 
 ImageLayoutTransition& ImageLayoutTransition::setSrcStageMask(vk::PipelineStageFlags mask) {
     m_srcStageMask = mask;
@@ -58,6 +64,12 @@ ImageLayoutTransition& ImageLayoutTransition::setAspectMask(vk::ImageAspectFlags
 }
 
 void ImageLayoutTransition::execute(vk::CommandBuffer cmd) {
+    bool async = cmd != VK_NULL_HANDLE;
+
+    if (cmd == VK_NULL_HANDLE) {
+        cmd = IEngine::get().beginOneTimeCommandBuffer(vkb::QueueType::graphics);
+    }
+
     cmd.pipelineBarrier(
         m_srcStageMask,
         m_dstStageMask,
@@ -80,6 +92,15 @@ void ImageLayoutTransition::execute(vk::CommandBuffer cmd) {
     for (uint32_t arrayLayer = arrayLayerFrom; arrayLayer < arrayLayerTo; arrayLayer++) {
         r_image.layout(mipLevel, arrayLayer) = m_newLayout;
     }
+
+    if (!async) {
+        vk::Fence fence = IEngine::get().getDevice().createFence(vk::FenceCreateInfo {});
+
+        IEngine::get().submitOneTimeCommandBuffer(cmd, vkb::QueueType::graphics, vk::SubmitInfo {}, fence);
+
+        auto _ = IEngine::get().getDevice().waitForFences(fence, true, UINT64_MAX);
+        IEngine::get().getDevice().destroyFence(fence);
+    }
 }
 
 ImageLayoutTransition Image::transitionLayout(uint32_t baseMipLevel, uint32_t levelCount, uint32_t baseArrayLayer, uint32_t layerCount) {
@@ -90,19 +111,22 @@ ImageLayoutTransition Image::transitionLayout(uint32_t baseMipLevel, uint32_t le
 }
 
 Image::Image(
-    vk::Image       image,
-    vk::Format      format,
-    vk::Extent3D    extent,
-    uint32_t        mipLevelCount,
-    uint32_t        arrayLayerCount,
-    vk::ImageLayout initialLayout
+    vk::Image            image,
+    vk::Format           format,
+    vk::Extent3D         extent,
+    vk::ImageAspectFlags aspectMask,
+    uint32_t             mipLevelCount,
+    uint32_t             arrayLayerCount,
+    vk::ImageLayout      initialLayout
 ) : m_image(image),
     m_format(format),
     m_extent(extent),
+    m_aspectMask(aspectMask),
     m_arrayLayerCount(arrayLayerCount),
     m_mipLevelCount(mipLevelCount),
     m_imageLayouts(mipLevelCount * arrayLayerCount, initialLayout)
 {}
+
 vk::ImageLayout& Image::layout(uint32_t mipLevel, uint32_t arrayLayer) {
     return m_imageLayouts[mipLevel + arrayLayer * m_mipLevelCount];
 }
@@ -127,8 +151,18 @@ ImageBuilder& ImageBuilder::setFormat(vk::Format format) {
     return *this;
 }
 
+ImageBuilder& ImageBuilder::setAspectMask(vk::ImageAspectFlags mask) {
+    m_aspectMask = mask;
+    return *this;
+}
+
 ImageBuilder& ImageBuilder::setUsage(vk::ImageUsageFlags usage) {
     m_usage = usage;
+    return *this;
+}
+
+ImageBuilder& ImageBuilder::addUsage(vk::ImageUsageFlags usage) {
+    m_usage |= usage;
     return *this;
 }
 
@@ -159,6 +193,11 @@ ImageBuilder& ImageBuilder::setImageType(vk::ImageType type) {
     return *this;
 }
 
+ImageBuilder& ImageBuilder::setInitialLayout(vk::ImageLayout layout) {
+    m_initialLayout = layout;
+    return *this;
+}
+
 Allocated<Image> ImageBuilder::build() {
     VkImageCreateInfo imageCreateInfo = vk::ImageCreateInfo {}
         .setMipLevels(m_mipLevelCount)
@@ -184,13 +223,81 @@ Allocated<Image> ImageBuilder::build() {
         vmaDestroyImage(allocator, image, allocation);
     });
 
-    return Allocated { Image {
+    Allocated<Image> ret = Allocated { Image {
         image,
         m_format,
         m_extent,
+        m_aspectMask,
         m_mipLevelCount,
         m_arrayLayerCount
     }, allocation };
+
+    if (m_initialLayout != vk::ImageLayout::eUndefined)
+        ret.m_inner.transitionLayout(0, m_mipLevelCount, 0, m_arrayLayerCount)
+            .setNewLayout(m_initialLayout)
+            .execute();
+
+    return ret;
+}
+
+Allocated<Image> ImageBuilder::load(const char* filename) {
+    ResourceScope tempScope { "ImageBuilder::load(" + std::string(filename) + ")" };
+
+    int width, height, channels;
+    void* data = stbi_load(filename, &width, &height, &channels, 4);
+    tempScope.addDeferredCleanupFunction([=]() { stbi_image_free(data); });
+
+    if (!data) throw std::runtime_error(std::string("Failed to open file") + std::string(filename));
+
+    setSize({ width, height, 1 });
+    addUsage(vk::ImageUsageFlagBits::eTransferDst);
+    Allocated<Image> ret = build();
+
+    ignis::Allocated<vk::Buffer> stagingBuffer = getValue(BufferBuilder { tempScope }
+        .setAllocationUsage(VMA_MEMORY_USAGE_CPU_TO_GPU)
+        .setBufferUsage(vk::BufferUsageFlagBits::eTransferSrc)
+        .setSizeBuildAndCopyData(static_cast<uint8_t*>(data), width * height * 4),
+        "Failed to create staging buffer for image load");
+    
+    IEngine& engine = IEngine::get();
+    vk::Device device = engine.getDevice();
+    
+    vk::Fence fence = device.createFence(vk::FenceCreateInfo {});
+    tempScope.addDeferredCleanupFunction([=]() { device.destroyFence(fence); });
+    
+    vk::CommandBuffer cmd = engine.beginOneTimeCommandBuffer(vkb::QueueType::graphics);
+
+    ret.m_inner.transitionLayout()
+        .setNewLayout(vk::ImageLayout::eTransferDstOptimal)
+        .setDstAccessMask(vk::AccessFlagBits::eTransferWrite)
+        .setDstStageMask(vk::PipelineStageFlagBits::eTransfer)
+        .execute(cmd);
+
+    cmd.copyBufferToImage(
+        *stagingBuffer,
+        ret.m_inner.getImage(),
+        vk::ImageLayout::eTransferDstOptimal,
+        vk::BufferImageCopy {}
+            .setBufferImageHeight(height)
+            .setBufferRowLength(width)
+            .setImageExtent(ret.m_inner.getExtent())
+            .setImageSubresource(vk::ImageSubresourceLayers {}
+                .setAspectMask(ret.m_inner.getAspectMask())
+                .setLayerCount(1)));
+    
+    ret.m_inner.transitionLayout()
+        .setNewLayout(m_initialLayout)
+        .setSrcAccessMask(vk::AccessFlagBits::eTransferWrite)
+        .setSrcStageMask(vk::PipelineStageFlagBits::eTransfer)
+        .execute(cmd);
+
+    engine.submitOneTimeCommandBuffer(cmd, vkb::QueueType::graphics, vk::SubmitInfo {}, fence);
+
+    vk::resultCheck(device.waitForFences(fence, true, UINT64_MAX), "Failed to wait for image load fence");
+
+    IEngine::get().getLog().addEntry({ "Image", Log::Type::Info, std::string("Loaded image file: ") + std::string(filename) });
+
+    return ret;
 }
 
 ImageViewBuilder::ImageViewBuilder(
@@ -199,14 +306,10 @@ ImageViewBuilder::ImageViewBuilder(
 ) : IBuilder(scope),
     r_image(image)
 {
-    m_components
-        .setR(vk::ComponentSwizzle::eR)
-        .setG(vk::ComponentSwizzle::eG)
-        .setB(vk::ComponentSwizzle::eB)
-        .setA(vk::ComponentSwizzle::eA);
-    
     m_arrayLayerCount = image.getArrayLayerCount();
     m_mipLevelCount = image.getMipLevelCount();
+
+    m_aspectMask = image.getAspectMask();
 }
 
 ImageViewBuilder& ImageViewBuilder::setComponentMapping(vk::ComponentMapping mapping) {

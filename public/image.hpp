@@ -32,8 +32,7 @@ public:
     ImageLayoutTransition& setMipLevelRange(uint32_t base, uint32_t count);
     ImageLayoutTransition& setAspectMask(vk::ImageAspectFlags mask);
 
-    void execute(vk::CommandBuffer cmd);
-
+    void execute(vk::CommandBuffer cmd = VK_NULL_HANDLE);
 };
 
 class Image {
@@ -46,18 +45,20 @@ class Image {
     uint32_t      m_mipLevelCount;
     uint32_t      m_arrayLayerCount;
     vk::Extent3D  m_extent;
+    vk::ImageAspectFlags m_aspectMask;
     std::optional<VmaAllocation> m_allocation;
 
 public:
     Image() = default;
 
     Image(
-        vk::Image                    image,
-        vk::Format                   format,
-        vk::Extent3D                 extent,
-        uint32_t                     mipLevelCount = 1,
-        uint32_t                     arrayLayerCount = 1,
-        vk::ImageLayout              initialLayout = vk::ImageLayout::eUndefined
+        vk::Image       image,
+        vk::Format      format,
+        vk::Extent3D    extent,
+        vk::ImageAspectFlags m_aspectmask,
+        uint32_t        mipLevelCount = 1,
+        uint32_t        arrayLayerCount = 1,
+        vk::ImageLayout initialLayout = vk::ImageLayout::eUndefined
     );
 
     Image(Image&& other) = default;
@@ -66,12 +67,14 @@ public:
     Image(const Image& other) = delete;
     Image& operator =(const Image& other) = delete;
 
-    vk::Image                    getImage()           { return m_image; }
-    vk::Format                   getFormat()          { return m_format; }
-    uint32_t                     getMipLevelCount()   { return m_mipLevelCount; }
-    uint32_t                     getArrayLayerCount() { return m_arrayLayerCount; }
-    glm::ivec3                   getSize()            { return { m_extent.width, m_extent.height, m_extent.depth };}
-    vk::Extent3D                 getExtent()          { return m_extent; }
+    vk::Image    getImage()           { return m_image; }
+    vk::Format   getFormat()          { return m_format; }
+    uint32_t     getMipLevelCount()   { return m_mipLevelCount; }
+    uint32_t     getArrayLayerCount() { return m_arrayLayerCount; }
+    glm::ivec3   getSize()            { return { m_extent.width, m_extent.height, m_extent.depth };}
+    vk::Extent3D getExtent()          { return m_extent; }
+
+    vk::ImageAspectFlags getAspectMask() { return m_aspectMask; }
 
     ImageLayoutTransition transitionLayout(
         uint32_t baseMipLevel = 0,
@@ -89,25 +92,31 @@ public:
     uint32_t              m_mipLevelCount      = 1;
     uint32_t              m_arrayLayerCount    = 1;
     vk::Format            m_format             = vk::Format::eR8G8B8A8Srgb;
+    vk::ImageAspectFlags  m_aspectMask         = vk::ImageAspectFlagBits::eColor;
     vk::ImageUsageFlags   m_usage              = vk::ImageUsageFlagBits::eSampled;
     std::vector<uint32_t> m_queueFamilyIndices = {};
     vk::Extent3D          m_extent             = { 1, 1, 1 };
     vk::ImageType         m_imageType          = vk::ImageType::e2D;
     VmaMemoryUsage        m_memoryUsage        = VMA_MEMORY_USAGE_GPU_ONLY;
+    vk::ImageLayout       m_initialLayout      = vk::ImageLayout::eUndefined;
 
     ImageBuilder(ResourceScope& scope);
 
     ImageBuilder& setMipLevelCount(uint32_t mipLevelCount);
     ImageBuilder& setArrayLayerCount(uint32_t arrayLayerCount);
     ImageBuilder& setFormat(vk::Format format);
+    ImageBuilder& setAspectMask(vk::ImageAspectFlags mask);
     ImageBuilder& setUsage(vk::ImageUsageFlags usage);
+    ImageBuilder& addUsage(vk::ImageUsageFlags usage);
     ImageBuilder& setQueueFamilyIndices(std::vector<uint32_t> indices);
     ImageBuilder& addQueueFamilyIndex(uint32_t index);
     ImageBuilder& setSize(glm::ivec2 size);
     ImageBuilder& setSize(glm::ivec3 size);
     ImageBuilder& setImageType(vk::ImageType type);
+    ImageBuilder& setInitialLayout(vk::ImageLayout layout);
 
     Allocated<Image> build() override;
+    Allocated<Image> load(const char* filename);
 };
 
 class ImageViewBuilder : public IBuilder<vk::ImageView> {

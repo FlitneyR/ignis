@@ -163,17 +163,17 @@ void IEngine::init() {
     m_graphicsQueueIndex = m_device.get_queue_index(vkb::QueueType::graphics).value();
     m_presentQueueIndex = m_device.get_queue_index(vkb::QueueType::present).value();
 
-    windowSizeChanged();
-    grs.addDeferredCleanupFunction([&]() {
-        getUntilWindowSizeChangeScope().executeDeferredCleanupFunctions();
-    });
-
     m_graphicsCmdPool = getDevice().createCommandPool(vk::CommandPoolCreateInfo {}.setQueueFamilyIndex(m_graphicsQueueIndex));
     m_presentCmdPool = getDevice().createCommandPool(vk::CommandPoolCreateInfo {}.setQueueFamilyIndex(m_presentQueueIndex));
 
     grs.addDeferredCleanupFunction([=, device = getDevice()]() {
         device.destroyCommandPool(m_presentCmdPool);
         device.destroyCommandPool(m_graphicsCmdPool);
+    });
+
+    windowSizeChanged();
+    grs.addDeferredCleanupFunction([&]() {
+        getUntilWindowSizeChangeScope().executeDeferredCleanupFunctions();
     });
     
     for (int i = 0; i < s_framesInFlight; i++) {
@@ -410,7 +410,8 @@ void IEngine::windowSizeChanged() {
         m_swapchainImages.push_back(Image {
             vk::Image { swapchainImages[i] },
             static_cast<vk::Format>(m_swapchain.image_format),
-            { size.x, size.y, 1 }
+            { size.x, size.y, 1 },
+            vk::ImageAspectFlagBits::eColor
         });
         m_swapchainImageViews.push_back(swapchainImageViews[i]);
     }
@@ -422,13 +423,14 @@ void IEngine::windowSizeChanged() {
     });
     
     m_depthImage = ImageBuilder { scope }
+        .setSize(size)
         .setFormat(vk::Format::eD32Sfloat)
         .setUsage(vk::ImageUsageFlagBits::eDepthStencilAttachment)
-        .setSize(size)
+        .setAspectMask(vk::ImageAspectFlagBits::eDepth)
+        .setInitialLayout(vk::ImageLayout::eDepthStencilAttachmentOptimal)
         .build();
 
     m_depthImageView = ImageViewBuilder { *m_depthImage, scope }
-        .setAspectMask(vk::ImageAspectFlagBits::eDepth)
         .build();
 
     onWindowSizeChanged(size);
