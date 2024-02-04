@@ -49,6 +49,7 @@ add_library(engine
     private/image.cpp
     private/allocated.cpp
     private/builder.cpp
+    private/descriptorSet.cpp
     private/descriptorSetBuilder.cpp
     private/log.cpp
 )

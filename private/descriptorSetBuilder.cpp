@@ -87,10 +87,10 @@ DescriptorSetBuilder& DescriptorSetBuilder::addLayouts(vk::DescriptorSetLayout l
     return *this;
 }
 
-std::vector<vk::DescriptorSet> DescriptorSetBuilder::build() {
-    return getDevice().allocateDescriptorSets(vk::DescriptorSetAllocateInfo {}
+DescriptorSetCollection DescriptorSetBuilder::build() {
+    return { getDevice().allocateDescriptorSets(vk::DescriptorSetAllocateInfo {}
         .setDescriptorPool(m_pool)
-        .setSetLayouts(m_layouts));
+        .setSetLayouts(m_layouts)), m_layouts };
 }
 
 }

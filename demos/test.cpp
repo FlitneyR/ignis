@@ -29,6 +29,9 @@ struct Camera {
     float far = 1'000.f;
     float fov = 45.f;
 
+    std::vector<ignis::Allocated<vk::Buffer>> m_buffers;
+    ignis::DescriptorSetCollection            m_descriptorSets;
+
     CameraUniform getUniformData() {
         vk::Extent2D swapchainExtent = ignis::IEngine::get().getVkbSwapchain().extent;
         glm::vec2 swapchainSize { swapchainExtent.width, swapchainExtent.height };
@@ -48,10 +51,6 @@ class Test final : public ignis::IEngine {
     ignis::Allocated<vk::Buffer> m_vertexBuffer;
     ignis::Allocated<vk::Buffer> m_indexBuffer;
     ignis::Allocated<vk::Buffer> m_instanceBuffer;
-
-    vk::DescriptorSetLayout m_cameraDescriptorSetLayout;
-    std::vector<ignis::Allocated<vk::Buffer>> m_cameraBuffers;
-    std::vector<vk::DescriptorSet>            m_cameraDescriptorSets;
 
     Camera m_camera;
 
@@ -105,24 +104,22 @@ class Test final : public ignis::IEngine {
             .setBufferUsage(vk::BufferUsageFlagBits::eIndexBuffer)
             .setSizeBuildAndStagedCopyData(m_indices), "Failed to create index buffer");
         
-        m_cameraDescriptorSetLayout = ignis::DescriptorLayoutBuilder { getGlobalResourceScope() }
-            .addBinding(vk::DescriptorSetLayoutBinding {}
-                .setBinding(0)
-                .setDescriptorType(vk::DescriptorType::eUniformBuffer)
-                .setDescriptorCount(1)
-                .setStageFlags(vk::ShaderStageFlagBits::eAllGraphics))
-            .build();
-        
-        m_cameraDescriptorSets = ignis::DescriptorSetBuilder { getGlobalResourceScope() }
+        m_camera.m_descriptorSets = ignis::DescriptorSetBuilder { getGlobalResourceScope() }
             .setPool(ignis::DescriptorPoolBuilder { getGlobalResourceScope() }
                 .setMaxSetCount(s_framesInFlight)
                 .addPoolSize({ vk::DescriptorType::eUniformBuffer, s_framesInFlight })
                 .build())
-            .addLayouts(m_cameraDescriptorSetLayout, s_framesInFlight)
+            .addLayouts(ignis::DescriptorLayoutBuilder { getGlobalResourceScope() }
+                .addBinding(vk::DescriptorSetLayoutBinding {}
+                    .setBinding(0)
+                    .setDescriptorType(vk::DescriptorType::eUniformBuffer)
+                    .setDescriptorCount(1)
+                    .setStageFlags(vk::ShaderStageFlagBits::eAllGraphics))
+                .build(), s_framesInFlight)
             .build();
 
         for (int i = 0; i < s_framesInFlight; i++) {
-            m_cameraBuffers.push_back(ignis::getValue(ignis::BufferBuilder { getGlobalResourceScope() }
+            m_camera.m_buffers.push_back(ignis::getValue(ignis::BufferBuilder { getGlobalResourceScope() }
                 .addQueueFamilyIndices({ getQueueIndex(vkb::QueueType::graphics) })
                 .setAllocationUsage(VMA_MEMORY_USAGE_CPU_TO_GPU)
                 .setBufferUsage(vk::BufferUsageFlagBits::eUniformBuffer)
@@ -130,18 +127,18 @@ class Test final : public ignis::IEngine {
                 .build(), "Failed to create a camera uniform buffer"));
             
             auto bufferInfo = vk::DescriptorBufferInfo {}
-                .setBuffer(*m_cameraBuffers.back())
+                .setBuffer(*m_camera.m_buffers.back())
                 .setRange(sizeof(CameraUniform));
 
             getDevice().updateDescriptorSets(vk::WriteDescriptorSet {}
                 .setBufferInfo(bufferInfo)
                 .setDescriptorCount(1)
                 .setDescriptorType(vk::DescriptorType::eUniformBuffer)
-                .setDstSet(m_cameraDescriptorSets[i]), {});
+                .setDstSet(m_camera.m_descriptorSets.getSet(i)), {});
         }
 
         m_pipelineLayout = ignis::PipelineLayoutBuilder { getGlobalResourceScope() }
-            .addSet(m_cameraDescriptorSetLayout)
+            .addSet(m_camera.m_descriptorSets.getLayout())
             .build();
 
         m_pipeline = ignis::getValue(ignis::GraphicsPipelineBuilder { m_pipelineLayout, getGlobalResourceScope() }
@@ -162,7 +159,7 @@ class Test final : public ignis::IEngine {
     }
     
     void recordDrawCommands(vk::CommandBuffer cmd) {
-        m_cameraBuffers[getInFlightIndex()].copyData(m_camera.getUniformData());
+        m_camera.m_buffers[getInFlightIndex()].copyData(m_camera.getUniformData());
         m_instanceBuffer.copyData(m_instances);
 
         cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, m_pipeline);
@@ -170,7 +167,7 @@ class Test final : public ignis::IEngine {
         cmd.bindVertexBuffers(0, { *m_vertexBuffer, *m_instanceBuffer }, { 0, 0 });
         cmd.bindIndexBuffer(*m_indexBuffer, 0, vk::IndexType::eUint16);
         cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, m_pipelineLayout,
-            0, m_cameraDescriptorSets[getInFlightIndex()], {});
+            0, m_camera.m_descriptorSets.getSet(getInFlightIndex()), {});
         
         cmd.drawIndexed(m_indices.size(), m_instances.size(), 0, 0, 0);
     }
