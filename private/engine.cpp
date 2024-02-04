@@ -82,25 +82,27 @@ void IEngine::init() {
     auto& grs = getGlobalResourceScope();
 
     glfwInit();
-    grs.addDeferredCleanupFunction([&]() {
+    grs.addDeferredCleanupFunction([]() {
         glfwTerminate();
     });
     
     glm::ivec2 initialWindowSize = getInitialWindowSize();
     glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
-    glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
+    // glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
     // glfwWindowHint(GLFW_COCOA_RETINA_FRAMEBUFFER, GLFW_FALSE); -- ImGui does not work with non-retina windows on MacOS >:(
     m_window = glfwCreateWindow(
         initialWindowSize.x, initialWindowSize.y,
         getName().c_str(), nullptr, nullptr
     );
 
+    glfwSetWindowUserPointer(m_window, this);
+
     glm::ivec2 _framebufferSize;
     glfwGetFramebufferSize(m_window, &_framebufferSize.x, &_framebufferSize.y);
     glm::vec<2, uint32_t> framebufferSize = _framebufferSize;
 
-    grs.addDeferredCleanupFunction([&]() {
-        glfwDestroyWindow(m_window);
+    grs.addDeferredCleanupFunction([window = m_window]() {
+        glfwDestroyWindow(window);
     });
 
     m_instance = getValue(vkb::InstanceBuilder {}
@@ -112,14 +114,14 @@ void IEngine::init() {
         .use_default_debug_messenger()
         .build(), "Failed to create a vulkan instance");
     
-    grs.addDeferredCleanupFunction([&]() {
-        vkb::destroy_instance(m_instance);
+    grs.addDeferredCleanupFunction([instance = m_instance]() {
+        vkb::destroy_instance(instance);
     });
 
     vk::resultCheck(vk::Result { glfwCreateWindowSurface(getInstance(), m_window, nullptr, &m_surface) },
         "Failed to create a surface");
-    grs.addDeferredCleanupFunction([&]() {
-        getInstance().destroySurfaceKHR(m_surface);
+    grs.addDeferredCleanupFunction([instance = getInstance(), surface = getSurface()]() {
+        instance.destroySurfaceKHR(surface);
     });
 
     m_phys_device = getValue(vkb::PhysicalDeviceSelector { m_instance }
@@ -141,8 +143,8 @@ void IEngine::init() {
         .add_pNext(&dynamicRenderingFeatures)
         .build(), "Failed to create a logical device");
     
-    grs.addDeferredCleanupFunction([&]() {
-        vkb::destroy_device(m_device);
+    grs.addDeferredCleanupFunction([device = m_device]() {
+        vkb::destroy_device(device);
     });
 
     VmaAllocatorCreateInfo allocatorCreatInfo {
@@ -151,8 +153,8 @@ void IEngine::init() {
         .physicalDevice = getPhysicalDevice(),
     };
     vk::resultCheck(vk::Result { vmaCreateAllocator(&allocatorCreatInfo, &m_allocator) }, "Failed to create VMA allocator");
-    grs.addDeferredCleanupFunction([&]() {
-        vmaDestroyAllocator(getAllocator());
+    grs.addDeferredCleanupFunction([allocator = m_allocator]() {
+        vmaDestroyAllocator(allocator);
     });
     
     m_graphicsQueue = getValue(m_device.get_queue(vkb::QueueType::graphics), "Failed to find a graphics queue");
@@ -161,41 +163,17 @@ void IEngine::init() {
     m_graphicsQueueIndex = m_device.get_queue_index(vkb::QueueType::graphics).value();
     m_presentQueueIndex = m_device.get_queue_index(vkb::QueueType::present).value();
 
-    m_swapchain = getValue(vkb::SwapchainBuilder {
-            getPhysicalDevice(),
-            getDevice(),
-            getSurface(),
-            m_graphicsQueueIndex,
-            m_presentQueueIndex
-        }
-        .build(), "Failed to create a swapchain");
-    
+    windowSizeChanged();
     grs.addDeferredCleanupFunction([&]() {
-        vkb::destroy_swapchain(m_swapchain);
-    });
-
-    auto swapchainImages = getValue(m_swapchain.get_images(), "Failed to get swapchain images");
-    auto swapchainImageViews = getValue(m_swapchain.get_image_views(), "Failed to get swapchain image views");
-
-    for (int i = 0; i < m_swapchain.image_count; i++) {
-        m_swapchainImages.push_back(Image {
-            vk::Image { swapchainImages[i] },
-            static_cast<vk::Format>(m_swapchain.image_format),
-            { framebufferSize.x, framebufferSize.y, 1 }
-        });
-        m_swapchainImageViews.push_back(swapchainImageViews[i]);
-    }
-
-    grs.addDeferredCleanupFunction([&]() {
-        for (auto& imageView : m_swapchainImageViews) getDevice().destroyImageView(imageView);
+        getUntilWindowSizeChangeScope().executeDeferredCleanupFunctions();
     });
 
     m_graphicsCmdPool = getDevice().createCommandPool(vk::CommandPoolCreateInfo {}.setQueueFamilyIndex(m_graphicsQueueIndex));
     m_presentCmdPool = getDevice().createCommandPool(vk::CommandPoolCreateInfo {}.setQueueFamilyIndex(m_presentQueueIndex));
 
-    grs.addDeferredCleanupFunction([&]() {
-        getDevice().destroyCommandPool(m_presentCmdPool);
-        getDevice().destroyCommandPool(m_graphicsCmdPool);
+    grs.addDeferredCleanupFunction([=, device = getDevice()]() {
+        device.destroyCommandPool(m_presentCmdPool);
+        device.destroyCommandPool(m_graphicsCmdPool);
     });
     
     for (int i = 0; i < s_framesInFlight; i++) {
@@ -205,21 +183,11 @@ void IEngine::init() {
             .setFlags(vk::FenceCreateFlagBits::eSignaled)));
     }
 
-    grs.addDeferredCleanupFunction([&]() {
-        for (auto& semaphore : m_imageAcquiredSemaphores)     getDevice().destroySemaphore(semaphore);
-        for (auto& semaphore : m_renderingFinishedSemaphores) getDevice().destroySemaphore(semaphore);
-        for (auto& fence     : m_frameFinishedFences)         getDevice().destroyFence(fence);
+    grs.addDeferredCleanupFunction([&, device = getDevice()]() {
+        for (auto& semaphore : m_imageAcquiredSemaphores)     device.destroySemaphore(semaphore);
+        for (auto& semaphore : m_renderingFinishedSemaphores) device.destroySemaphore(semaphore);
+        for (auto& fence     : m_frameFinishedFences)         device.destroyFence(fence);
     });
-
-    m_depthImage = ImageBuilder { getGlobalResourceScope() }
-        .setFormat(vk::Format::eD32Sfloat)
-        .setUsage(vk::ImageUsageFlagBits::eDepthStencilAttachment)
-        .setSize({ framebufferSize.x, framebufferSize.y })
-        .build();
-
-    m_depthImageView = ImageViewBuilder { *m_depthImage, getGlobalResourceScope() }
-        .setAspectMask(vk::ImageAspectFlagBits::eDepth)
-        .build();
 
     m_dispatchLoaderDynamic = vk::DispatchLoaderDynamic { getInstance(), vkGetInstanceProcAddr, getDevice(), vkGetDeviceProcAddr };
 
@@ -269,6 +237,7 @@ void IEngine::init() {
         .ColorAttachmentFormat = m_swapchain.image_format,
         .DescriptorPool = imGuiDescriptorPool
     };
+
     ImGui_ImplVulkan_Init(&imGuiInitInfo, VK_NULL_HANDLE);
     grs.addDeferredCleanupFunction([]() {
         ImGui_ImplVulkan_Shutdown();
@@ -312,7 +281,11 @@ void IEngine::draw() {
     getDevice().resetFences(frameFinishedFence);
 
     vk::ResultValue<uint32_t> imageIndex = getDevice().acquireNextImageKHR(getSwapchain(), UINT64_MAX, imageAcquiredSemaphore, nullptr);
-    vk::resultCheck(imageIndex.result, "Failed to acquire next image");
+    
+    bool shouldTryToRender = true;
+    if (imageIndex.result == vk::Result::eSuboptimalKHR) {
+        shouldTryToRender = false;
+    } else vk::resultCheck(imageIndex.result, "Failed to acquire next image");
 
     vk::CommandBuffer cmd = getDevice().allocateCommandBuffers(vk::CommandBufferAllocateInfo {}
         .setCommandBufferCount(1)
@@ -320,58 +293,61 @@ void IEngine::draw() {
         )[0];
     
     cmd.begin(vk::CommandBufferBeginInfo {});
-    
-    m_swapchainImages[imageIndex.value].transitionLayout()
-        .setDstStageMask(vk::PipelineStageFlagBits::eColorAttachmentOutput)
-        .setDstAccessMask(vk::AccessFlagBits::eColorAttachmentWrite)
-        .setNewLayout(vk::ImageLayout::eColorAttachmentOptimal)
-        .execute(cmd);
 
-    auto colorAttachment = vk::RenderingAttachmentInfo {}
-        .setImageView(m_swapchainImageViews[imageIndex.value])
-        .setImageLayout(vk::ImageLayout::eColorAttachmentOptimal)
-        .setClearValue(vk::ClearValue {})
-        .setStoreOp(vk::AttachmentStoreOp::eStore)
-        .setLoadOp(vk::AttachmentLoadOp::eClear)
-        ;
+    if (shouldTryToRender) {
+        m_swapchainImages[imageIndex.value].transitionLayout()
+            .setDstStageMask(vk::PipelineStageFlagBits::eColorAttachmentOutput)
+            .setDstAccessMask(vk::AccessFlagBits::eColorAttachmentWrite)
+            .setNewLayout(vk::ImageLayout::eColorAttachmentOptimal)
+            .execute(cmd);
 
-    auto depthAttachment = vk::RenderingAttachmentInfo {}
-        .setImageView(m_depthImageView)
-        .setImageLayout(vk::ImageLayout::eDepthStencilAttachmentOptimal)
-        .setClearValue(vk::ClearValue {}.setDepthStencil({ 1.0f }))
-        .setStoreOp(vk::AttachmentStoreOp::eStore)
-        .setLoadOp(vk::AttachmentLoadOp::eClear)
-        ;
-    
-    glm::ivec2 _windowSize;
-    glfwGetFramebufferSize(m_window, &_windowSize.x, &_windowSize.y);
-    glm::vec<2, uint32_t> windowSize = _windowSize;
+        auto colorAttachment = vk::RenderingAttachmentInfo {}
+            .setImageView(m_swapchainImageViews[imageIndex.value])
+            .setImageLayout(vk::ImageLayout::eColorAttachmentOptimal)
+            .setClearValue(vk::ClearValue {})
+            .setStoreOp(vk::AttachmentStoreOp::eStore)
+            .setLoadOp(vk::AttachmentLoadOp::eClear)
+            ;
 
-    cmd.beginRendering(vk::RenderingInfo {}
-        .setColorAttachments(colorAttachment)
-        .setPDepthAttachment(&depthAttachment)
-        .setLayerCount(1)
-        .setRenderArea({ { 0, 0 }, { windowSize.x, windowSize.y } }),
-        m_dispatchLoaderDynamic);
+        auto depthAttachment = vk::RenderingAttachmentInfo {}
+            .setImageView(m_depthImageView)
+            .setImageLayout(vk::ImageLayout::eDepthStencilAttachmentOptimal)
+            .setClearValue(vk::ClearValue {}.setDepthStencil({ 1.0f }))
+            .setStoreOp(vk::AttachmentStoreOp::eStore)
+            .setLoadOp(vk::AttachmentLoadOp::eClear)
+            ;
+        
+        glm::ivec2 _windowSize;
+        glfwGetFramebufferSize(m_window, &_windowSize.x, &_windowSize.y);
+        glm::vec<2, uint32_t> windowSize = _windowSize;
 
-    cmd.setViewport(0, vk::Viewport {}
-        .setX(0).setY(0)
-        .setWidth(windowSize.x).setHeight(windowSize.y)
-        .setMinDepth(0).setMaxDepth(1));
-    
-    recordDrawCommands(cmd);
-    
-    cmd.endRendering(m_dispatchLoaderDynamic);
+        cmd.beginRendering(vk::RenderingInfo {}
+            .setColorAttachments(colorAttachment)
+            .setPDepthAttachment(&depthAttachment)
+            .setLayerCount(1)
+            .setRenderArea({ { 0, 0 }, { windowSize.x, windowSize.y } }),
+            m_dispatchLoaderDynamic);
 
-    cmd.beginRendering(vk::RenderingInfo {}
-        .setColorAttachments(colorAttachment.setLoadOp(vk::AttachmentLoadOp::eLoad))
-        .setLayerCount(1)
-        .setRenderArea({ { 0, 0 }, { windowSize.x, windowSize.y } }),
-        m_dispatchLoaderDynamic);
-    
-    ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), cmd);
-    
-    cmd.endRendering(m_dispatchLoaderDynamic);
+        cmd.setViewport(0, vk::Viewport {}
+            .setX(0).setY(0)
+            .setWidth(windowSize.x).setHeight(windowSize.y)
+            .setMinDepth(0).setMaxDepth(1));
+        
+        recordDrawCommands(cmd);
+        
+        cmd.endRendering(m_dispatchLoaderDynamic);
+
+        cmd.beginRendering(vk::RenderingInfo {}
+            .setColorAttachments(colorAttachment.setLoadOp(vk::AttachmentLoadOp::eLoad))
+            .setLayerCount(1)
+            .setRenderArea({ { 0, 0 }, { windowSize.x, windowSize.y } }),
+            m_dispatchLoaderDynamic);
+        
+        ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), cmd);
+        
+        cmd.endRendering(m_dispatchLoaderDynamic);
+
+    }
     
     m_swapchainImages[imageIndex.value].transitionLayout()
         .setSrcStageMask(vk::PipelineStageFlagBits::eColorAttachmentOutput)
@@ -391,21 +367,76 @@ void IEngine::draw() {
         frameFinishedFence);
 
     vk::SwapchainKHR swapchain = getSwapchain();
-    vk::resultCheck(getQueue(vkb::QueueType::present).presentKHR(vk::PresentInfoKHR {}
+    vk::Result presentResult = getQueue(vkb::QueueType::present).presentKHR(vk::PresentInfoKHR {}
         .setImageIndices(imageIndex.value)
         .setSwapchains(swapchain)
-        .setWaitSemaphores(renderingFinishedSemaphore)),
-        "Failed to present rendered image");
+        .setWaitSemaphores(renderingFinishedSemaphore));
+
+    if (presentResult == vk::Result::eSuboptimalKHR || presentResult == vk::Result::eErrorOutOfDateKHR) {
+        windowSizeChanged();
+    }
+    else vk::resultCheck(presentResult, "Failed to present render result");
+
+    if (imageIndex.result == vk::Result::eSuboptimalKHR) return;
 
     m_inFlightFrameIndex = (m_inFlightFrameIndex + 1) % s_framesInFlight;
+}
 
+void IEngine::windowSizeChanged() {
     getDevice().waitIdle();
+
+    auto& scope = getUntilWindowSizeChangeScope();
+    scope.executeDeferredCleanupFunctions();
+
+    m_swapchain = getValue(vkb::SwapchainBuilder {
+            getPhysicalDevice(),
+            getDevice(),
+            getSurface(),
+            m_graphicsQueueIndex,
+            m_presentQueueIndex
+        }
+        .build(), "Failed to create a swapchain");
+    
+    scope.addDeferredCleanupFunction([swapchain = m_swapchain]() {
+        vkb::destroy_swapchain(swapchain);
+    });
+
+    glm::vec<2, uint32_t> size { m_swapchain.extent.width, m_swapchain.extent.height };
+
+    auto swapchainImages = getValue(m_swapchain.get_images(), "Failed to get swapchain images");
+    auto swapchainImageViews = getValue(m_swapchain.get_image_views(), "Failed to get swapchain image views");
+
+    for (int i = 0; i < m_swapchain.image_count; i++) {
+        m_swapchainImages.push_back(Image {
+            vk::Image { swapchainImages[i] },
+            static_cast<vk::Format>(m_swapchain.image_format),
+            { size.x, size.y, 1 }
+        });
+        m_swapchainImageViews.push_back(swapchainImageViews[i]);
+    }
+
+    scope.addDeferredCleanupFunction([&, device = getDevice()]() {
+        for (auto& imageView : m_swapchainImageViews) device.destroyImageView(imageView);
+        m_swapchainImageViews.clear();
+        m_swapchainImages.clear();
+    });
+    
+    m_depthImage = ImageBuilder { scope }
+        .setFormat(vk::Format::eD32Sfloat)
+        .setUsage(vk::ImageUsageFlagBits::eDepthStencilAttachment)
+        .setSize(size)
+        .build();
+
+    m_depthImageView = ImageViewBuilder { *m_depthImage, scope }
+        .setAspectMask(vk::ImageAspectFlagBits::eDepth)
+        .build();
+
+    onWindowSizeChanged(size);
 }
 
 vk::Queue IEngine::getQueue(vkb::QueueType queueType) const {
     switch (queueType) {
     case vkb::QueueType::graphics: return m_graphicsQueue;
-    case vkb::QueueType::compute: return m_computeQueue;
     case vkb::QueueType::present: return m_presentQueue;
     default: throw std::runtime_error("Requested queue type does not exist");
     }
@@ -414,7 +445,6 @@ vk::Queue IEngine::getQueue(vkb::QueueType queueType) const {
 uint32_t IEngine::getQueueIndex(vkb::QueueType queueType) const {
     switch (queueType) {
     case vkb::QueueType::graphics: return m_graphicsQueueIndex;
-    case vkb::QueueType::compute: return m_computeQueueIndex;
     case vkb::QueueType::present: return m_presentQueueIndex;
     default: throw std::runtime_error("Requested queue type does not exist");
     }
@@ -423,7 +453,6 @@ uint32_t IEngine::getQueueIndex(vkb::QueueType queueType) const {
 vk::CommandPool IEngine::getCommandPool(vkb::QueueType queueType) const {
     switch (queueType) {
     case vkb::QueueType::graphics: return m_graphicsCmdPool;
-    case vkb::QueueType::compute: return m_computeCmdPool;
     case vkb::QueueType::present: return m_presentCmdPool;
     default: throw std::runtime_error("Requested queue type does not exist");
     }

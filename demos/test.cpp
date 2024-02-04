@@ -30,9 +30,12 @@ struct Camera {
     float fov = 45.f;
 
     CameraUniform getUniformData() {
+        vk::Extent2D swapchainExtent = ignis::IEngine::get().getVkbSwapchain().extent;
+        glm::vec2 swapchainSize { swapchainExtent.width, swapchainExtent.height };
+
         auto uniform = CameraUniform {
             .view = glm::lookAt(position, position + forward, up),
-            .perspective = glm::perspectiveFov(glm::radians(fov), 1280.f, 720.f, near, far),
+            .perspective = glm::perspective(glm::radians(fov), swapchainSize.x / swapchainSize.y, near, far),
         };
 
         uniform.perspective = glm::scale(uniform.perspective, { 1.f, -1.f, 1.f});
@@ -147,8 +150,8 @@ class Test final : public ignis::IEngine {
             .addVertexAttribute<glm::vec3>(0, 0, __offsetof(Vertex, position))
             .addVertexAttribute<glm::vec4>(0, 1, __offsetof(Vertex, color))
             .addVertexAttribute<glm::mat4>(1, 2, __offsetof(Instance, transform))
-            .addColorAttachmentFormat(m_swapchain.image_format)
-            .setDepthAttachmentFormat(m_depthImage->getFormat())
+            .addColorAttachmentFormat(getVkbSwapchain().image_format)
+            .setDepthAttachmentFormat(getDepthBuffer()->getFormat())
             .addAttachmentBlendState(ignis::GraphicsPipelineBuilder::defaultAttachmentBlendState())
             .setDepthStencilState(ignis::GraphicsPipelineBuilder::defaultDepthStencilState())
             .addViewport(vk::Viewport {})
@@ -160,6 +163,7 @@ class Test final : public ignis::IEngine {
     
     void recordDrawCommands(vk::CommandBuffer cmd) {
         m_cameraBuffers[getInFlightIndex()].copyData(m_camera.getUniformData());
+        m_instanceBuffer.copyData(m_instances);
 
         cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, m_pipeline);
 
@@ -176,28 +180,45 @@ class Test final : public ignis::IEngine {
         static float pitch    = 0.f;
         static float distance = 5.f;
 
+        getLog().draw();
+
         ImGui::Begin("Scene");
 
-        if (ImGui::CollapsingHeader("Camera")) {
+        if (ImGui::Button("Add message to log"))
+            getLog().addEntry({ "Test", ignis::Log::Type::Info, "Button pressed" });
+
+        if (ImGui::TreeNode("Camera")) {
             ImGui::DragFloat("FOV", &m_camera.fov, 1.0f, 30.f, 110.f);
             ImGui::DragFloat("Yaw", &yaw);
             ImGui::DragFloat("Pitch", &pitch, 1.f, -85.f, 85.f);
             ImGui::DragFloat("Distance", &distance, 0.1f, 1.0f, 10.0f);
+            ImGui::TreePop();
+        }
+
+        m_camera.position = glm::rotate(glm::radians(yaw),   glm::vec3 {  0.f, 0.f, 1.f })
+                        * glm::rotate(glm::radians(pitch), glm::vec3 { -1.f, 0.f, 0.f })
+                        * glm::vec4 { 0.f, -distance, 0.f, 1.f };
+        m_camera.forward = -m_camera.position;
+
+        if (ImGui::TreeNode("Instances")) {
+            for (int i = 0; i < m_instances.size(); i++) {
+                char instanceID[512];
+                std::snprintf(instanceID, sizeof(instanceID), "Instance: %d", i);
+
+                if (ImGui::TreeNode(instanceID)) {
+                    ImGui::DragFloat3("Position", &m_instances[i].transform[3][0], 0.1f);
+                    ImGui::TreePop();
+                }
+            }
+
+            ImGui::TreePop();
         }
 
         ImGui::End();
-
-        m_camera.position = glm::rotate(glm::radians(yaw),   glm::vec3 {  0.f, 0.f, 1.f })
-                          * glm::rotate(glm::radians(pitch), glm::vec3 { -1.f, 0.f, 0.f })
-                          * glm::vec4 { 0.f, -distance, 0.f, 1.f };
-        
-        m_camera.forward = -m_camera.position;
     }
 
     std::string getName()       { return "Test"; }
     uint32_t    getAppVersion() { return VK_MAKE_API_VERSION(0, 1, 0, 0); }
-
-    Test() {}
 
 public:
     static Test s_singleton;
