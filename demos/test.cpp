@@ -121,7 +121,7 @@ class Test final : public ignis::IEngine {
         { { .position = {  1.0f,  1.0f,  1.0f } } },
     };
 
-    void setup() {
+    void setup() override {
         auto bufferBuilder = ignis::BufferBuilder { getGlobalResourceScope() }
             .addQueueFamilyIndices({ getQueueIndex(vkb::QueueType::graphics) })
             .setBufferUsage(vk::BufferUsageFlagBits::eVertexBuffer)
@@ -230,7 +230,7 @@ class Test final : public ignis::IEngine {
             .build(), "Failed to create pipeline");
     }
     
-    void recordDrawCommands(vk::CommandBuffer cmd, vk::Extent2D viewport) {
+    void recordDrawCommands(vk::CommandBuffer cmd, vk::Extent2D viewport) override {
         m_camera.m_buffers[getInFlightIndex()].copyData(m_camera.getUniformData(viewport));
 
         std::vector<InstanceData> instanceData(m_instances.size());
@@ -251,7 +251,7 @@ class Test final : public ignis::IEngine {
         cmd.drawIndexed(m_indices.size(), m_instances.size(), 0, 0, 0);
     }
 
-    void update(double deltaTime) {
+    void drawUI() override {
         static float yaw      = 0.f;
         static float pitch    = 0.f;
         static float distance = 5.f;
@@ -259,6 +259,10 @@ class Test final : public ignis::IEngine {
         ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 3.0f);
         ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 3.0f);
         ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 3.0f);
+
+        ImGui::Begin("Metrics");
+        ImGui::Text("FPS: %f", 1.0f / getDeltaTime());
+        ImGui::End();
 
         getLog().draw();
 
@@ -304,8 +308,10 @@ class Test final : public ignis::IEngine {
         ImGui::PopStyleVar(3);
     }
 
-    std::string getName()       { return "Test"; }
-    uint32_t    getAppVersion() { return VK_MAKE_API_VERSION(0, 1, 0, 0); }
+    void update() override {}
+
+    std::string getName()       override { return "Test"; }
+    uint32_t    getAppVersion() override { return VK_MAKE_API_VERSION(0, 1, 0, 0); }
 
 public:
     static Test s_singleton;

@@ -76,7 +76,8 @@ void IEngine::main() {
         viewport.offset = vk::Offset2D { static_cast<int32_t>(offset.x * scale), static_cast<int32_t>(offset.y * scale) };
         viewport.extent = vk::Extent2D { static_cast<uint32_t>(size.x * scale), static_cast<uint32_t>(size.y * scale) };
 
-        update(deltaTime);
+        drawUI();
+        update();
         draw(viewport);
 
         lastFrameStart = m_currentFrameStartTime;

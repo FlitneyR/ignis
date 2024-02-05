@@ -70,9 +70,10 @@ protected:
 
     virtual glm::ivec2 getInitialWindowSize() { return { 1280, 720 }; }
 
-    virtual void setup() = 0;
-    virtual void update(double deltaTime) = 0;
-    virtual void recordDrawCommands(vk::CommandBuffer cmd, vk::Extent2D viewport) = 0;
+    virtual void setup() {};
+    virtual void drawUI() {};
+    virtual void update() {};
+    virtual void recordDrawCommands(vk::CommandBuffer cmd, vk::Extent2D viewport) {};
     virtual void onWindowSizeChanged(glm::vec<2, uint32_t> size) {}
 
 private:
