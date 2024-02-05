@@ -33,16 +33,13 @@ void Log::draw() {
             std::string str = entry.asString();
 
             if (m_filter.PassFilter(&str.front(), &str.back())) {
-
                 ImGui::TableNextRow();
-
                 ImGui::TableNextColumn();
                 ImGui::Text("%s", entry.category.c_str());
                 ImGui::TableNextColumn();
                 ImGui::Text("%s", s_typeNames[static_cast<uint32_t>(entry.type)]);
                 ImGui::TableNextColumn();
                 ImGui::Text("%s", entry.message.c_str());
-
             }
         }
 

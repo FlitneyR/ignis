@@ -65,8 +65,19 @@ void IEngine::main() {
         ImGui_ImplGlfw_NewFrame();
         ImGui::NewFrame();
 
+        ImGuiID dockSpaceID = ImGui::DockSpaceOverViewport(ImGui::GetMainViewport(), ImGuiDockNodeFlags_PassthruCentralNode | ImGuiDockNodeFlags_NoDockingInCentralNode);
+        ImGuiDockNode* centralNode = ImGui::DockBuilderGetCentralNode(dockSpaceID);
+
+        float scale = ImGui::GetWindowDpiScale();
+        ImVec2 offset = centralNode->Pos;
+        ImVec2 size = centralNode->Size;
+
+        vk::Rect2D viewport;
+        viewport.offset = vk::Offset2D { static_cast<int32_t>(offset.x * scale), static_cast<int32_t>(offset.y * scale) };
+        viewport.extent = vk::Extent2D { static_cast<uint32_t>(size.x * scale), static_cast<uint32_t>(size.y * scale) };
+
         update(deltaTime);
-        draw();
+        draw(viewport);
 
         lastFrameStart = m_currentFrameStartTime;
     }
@@ -269,7 +280,7 @@ double IEngine::getTime() const {
     #undef SECONDS_BETWEEN
 }
 
-void IEngine::draw() {
+void IEngine::draw(vk::Rect2D viewport) {
     ImGui::Render();
 
     vk::Fence frameFinishedFence = m_frameFinishedFences[getInFlightIndex()];
@@ -329,11 +340,15 @@ void IEngine::draw() {
             m_dispatchLoaderDynamic);
 
         cmd.setViewport(0, vk::Viewport {}
-            .setX(0).setY(0)
-            .setWidth(windowSize.x).setHeight(windowSize.y)
+            // .setX(0).setY(0)
+            // .setWidth(windowSize.x).setHeight(windowSize.y)
+            .setX(viewport.offset.x)
+            .setY(viewport.offset.y)
+            .setWidth(viewport.extent.width)
+            .setHeight(viewport.extent.height)
             .setMinDepth(0).setMaxDepth(1));
         
-        recordDrawCommands(cmd);
+        recordDrawCommands(cmd, viewport.extent);
         
         cmd.endRendering(m_dispatchLoaderDynamic);
 

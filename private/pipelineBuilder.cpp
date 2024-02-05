@@ -127,30 +127,6 @@ GraphicsPipelineBuilder::GraphicsPipelineBuilder(
     useDefaults();
 }
 
-vk::PipelineColorBlendAttachmentState GraphicsPipelineBuilder::defaultAttachmentBlendState() {
-    return vk::PipelineColorBlendAttachmentState {}
-        .setColorWriteMask(
-            vk::ColorComponentFlagBits::eR |
-            vk::ColorComponentFlagBits::eG |
-            vk::ColorComponentFlagBits::eB |
-            vk::ColorComponentFlagBits::eA
-        )
-        .setBlendEnable(true)
-        .setAlphaBlendOp(vk::BlendOp::eAdd)
-        .setColorBlendOp(vk::BlendOp::eAdd)
-        .setSrcColorBlendFactor(vk::BlendFactor::eSrcAlpha)
-        .setDstColorBlendFactor(vk::BlendFactor::eOneMinusSrcAlpha)
-        .setSrcAlphaBlendFactor(vk::BlendFactor::eOne)
-        .setDstAlphaBlendFactor(vk::BlendFactor::eZero);
-}
-
-vk::PipelineDepthStencilStateCreateInfo GraphicsPipelineBuilder::defaultDepthStencilState() {
-    return vk::PipelineDepthStencilStateCreateInfo {}
-        .setDepthTestEnable(true)
-        .setDepthCompareOp(vk::CompareOp::eLess)
-        .setDepthWriteEnable(true);
-}
-
 GraphicsPipelineBuilder& GraphicsPipelineBuilder::useDefaults() {
     m_dynamicStates = {};
     m_dynamicStates.push_back(vk::DynamicState::eViewport);
@@ -158,7 +134,7 @@ GraphicsPipelineBuilder& GraphicsPipelineBuilder::useDefaults() {
     
     m_vertexInputState = vk::PipelineVertexInputStateCreateInfo {};
     
-    inputAssemblyState = vk::PipelineInputAssemblyStateCreateInfo {}
+    m_inputAssemblyState = vk::PipelineInputAssemblyStateCreateInfo {}
         .setTopology(vk::PrimitiveTopology::eTriangleList)
         ;
     
@@ -179,8 +155,8 @@ GraphicsPipelineBuilder& GraphicsPipelineBuilder::useDefaults() {
     m_attachmentBlendStates = {};
     m_colorBlendState = vk::PipelineColorBlendStateCreateInfo {};
 
-    m_viewports = {};
-    m_scissors = {};
+    m_viewports = { vk::Viewport {} };
+    m_scissors = { vk::Rect2D {} };
     m_viewportState = vk::PipelineViewportStateCreateInfo {};
 
     m_colorAttachmentFormats = {};
@@ -191,41 +167,35 @@ GraphicsPipelineBuilder& GraphicsPipelineBuilder::useDefaults() {
 
 vk::ResultValue<vk::Pipeline> GraphicsPipelineBuilder::build() {
     m_dynamicState
-        .setDynamicStates(m_dynamicStates)
-        ;
+        .setDynamicStates(m_dynamicStates);
 
     m_viewportState
         .setViewports(m_viewports)
-        .setScissors(m_scissors)
-        ;
+        .setScissors(m_scissors);
     
     m_vertexInputState
         .setVertexAttributeDescriptions(m_vertexAttributes)
-        .setVertexBindingDescriptions(m_vertexBindings)
-        ;
+        .setVertexBindingDescriptions(m_vertexBindings);
 
     m_colorBlendState
-        .setAttachments(m_attachmentBlendStates)
-        ;
+        .setAttachments(m_attachmentBlendStates);
     
     m_renderingCreateInfo
-        .setColorAttachmentFormats(m_colorAttachmentFormats)
-        ;
+        .setColorAttachmentFormats(m_colorAttachmentFormats);
 
     auto createInfo = vk::GraphicsPipelineCreateInfo {}
         .setLayout(m_layout)
         .setStages(m_stages)
         .setPDynamicState(&m_dynamicState)
         .setPVertexInputState(&m_vertexInputState)
-        .setPInputAssemblyState(&inputAssemblyState)
+        .setPInputAssemblyState(&m_inputAssemblyState)
         .setPDepthStencilState(m_depthStencilState ? &*m_depthStencilState : nullptr)
         .setPTessellationState(m_tessellationState ? &*m_tessellationState : nullptr)
         .setPRasterizationState(&m_rasterizationState)
         .setPMultisampleState(&m_multisampleState)
         .setPColorBlendState(&m_colorBlendState)
         .setPViewportState(&m_viewportState)
-        .setPNext(&m_renderingCreateInfo)
-        ;
+        .setPNext(&m_renderingCreateInfo);
 
     vk::ResultValue<vk::Pipeline> pipelineResult = getDevice().createGraphicsPipeline(
         VK_NULL_HANDLE,
@@ -322,7 +292,7 @@ GraphicsPipelineBuilder& GraphicsPipelineBuilder::addInstanceBinding(uint32_t bi
 }
 
 GraphicsPipelineBuilder& GraphicsPipelineBuilder::setInputAssemblyState(vk::PipelineInputAssemblyStateCreateInfo ias) {
-    inputAssemblyState = ias;
+    m_inputAssemblyState = ias;
     return *this;
 }
 

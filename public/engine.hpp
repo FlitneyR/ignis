@@ -72,7 +72,7 @@ protected:
 
     virtual void setup() = 0;
     virtual void update(double deltaTime) = 0;
-    virtual void recordDrawCommands(vk::CommandBuffer cmd) = 0;
+    virtual void recordDrawCommands(vk::CommandBuffer cmd, vk::Extent2D viewport) = 0;
     virtual void onWindowSizeChanged(glm::vec<2, uint32_t> size) {}
 
 private:
@@ -82,7 +82,7 @@ private:
     uint32_t    getEngineVersion() { return VK_MAKE_API_VERSION(0, 1, 0, 0); }
 
     void init();
-    void draw();
+    void draw(vk::Rect2D viewport);
     void windowSizeChanged();
     
     void registerDeltaTime(double deltaTime);

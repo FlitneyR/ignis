@@ -11,8 +11,39 @@ struct Vertex {
     glm::vec4 color;
 };
 
-struct Instance {
-    glm::mat4 transform;
+template<typename Data>
+struct IInstance {
+    virtual operator Data() = 0;
+};
+
+struct InstanceData {
+    glm::mat4 transform = glm::mat4 { 1.f };
+};
+
+struct Instance : public IInstance<InstanceData> {
+    glm::vec3 position { 0.f, 0.f, 0.f };
+    glm::vec3 scale    { 1.f, 1.f, 1.f };
+    glm::quat rotation {};
+
+    struct Init {
+        glm::vec3 position { 0.f, 0.f, 0.f };
+        glm::vec3 scale    { 1.f, 1.f, 1.f };
+        glm::quat rotation {};
+    };
+
+    Instance(const Init& init) :
+        position(init.position),
+        scale(init.scale),
+        rotation(init.rotation)
+    {}
+
+    operator InstanceData() override {
+        InstanceData ret {};
+        ret. transform = glm::translate(position)
+                       * glm::scale(scale)
+                       * glm::mat4 { rotation };
+        return ret;
+    }
 };
 
 struct CameraUniform {
@@ -32,13 +63,13 @@ struct Camera {
     std::vector<ignis::Allocated<vk::Buffer>> m_buffers;
     ignis::DescriptorSetCollection            m_descriptorSets;
 
-    CameraUniform getUniformData() {
-        vk::Extent2D swapchainExtent = ignis::IEngine::get().getVkbSwapchain().extent;
-        glm::vec2 swapchainSize { swapchainExtent.width, swapchainExtent.height };
+    CameraUniform getUniformData(vk::Extent2D viewport) {
+        float width = viewport.width;
+        float height = viewport.height;
 
         auto uniform = CameraUniform {
             .view = glm::lookAt(position, position + forward, up),
-            .perspective = glm::perspective(glm::radians(fov), swapchainSize.x / swapchainSize.y, near, far),
+            .perspective = glm::perspective(glm::radians(fov), width / height, near, far),
         };
         uniform.perspective = glm::scale(uniform.perspective, { 1.f, -1.f, 1.f});
 
@@ -80,14 +111,14 @@ class Test final : public ignis::IEngine {
     };
 
     std::vector<Instance> m_instances {
-        { glm::translate(glm::mat4 { 1.f }, { -1.0f, -1.0f, -1.0f }) },
-        { glm::translate(glm::mat4 { 1.f }, { -1.0f, -1.0f,  1.0f }) },
-        { glm::translate(glm::mat4 { 1.f }, { -1.0f,  1.0f, -1.0f }) },
-        { glm::translate(glm::mat4 { 1.f }, { -1.0f,  1.0f,  1.0f }) },
-        { glm::translate(glm::mat4 { 1.f }, {  1.0f, -1.0f, -1.0f }) },
-        { glm::translate(glm::mat4 { 1.f }, {  1.0f, -1.0f,  1.0f }) },
-        { glm::translate(glm::mat4 { 1.f }, {  1.0f,  1.0f, -1.0f }) },
-        { glm::translate(glm::mat4 { 1.f }, {  1.0f,  1.0f,  1.0f }) },
+        { { .position = { -1.0f, -1.0f, -1.0f } } },
+        { { .position = { -1.0f, -1.0f,  1.0f } } },
+        { { .position = { -1.0f,  1.0f, -1.0f } } },
+        { { .position = { -1.0f,  1.0f,  1.0f } } },
+        { { .position = {  1.0f, -1.0f, -1.0f } } },
+        { { .position = {  1.0f, -1.0f,  1.0f } } },
+        { { .position = {  1.0f,  1.0f, -1.0f } } },
+        { { .position = {  1.0f,  1.0f,  1.0f } } },
     };
 
     void setup() {
@@ -100,7 +131,8 @@ class Test final : public ignis::IEngine {
             .setSizeBuildAndStagedCopyData(m_vertices), "Failed to createVertexBuffer");
 
         m_instanceBuffer = ignis::getValue(ignis::BufferBuilder { bufferBuilder }
-            .setSizeBuildAndStagedCopyData(m_instances), "Failed to create instance buffer");
+            .setSize<InstanceData>(m_instances.size())
+            .build(), "Failed to create instance buffer");
 
         m_indexBuffer = ignis::getValue(ignis::BufferBuilder { bufferBuilder }
             .setBufferUsage(vk::BufferUsageFlagBits::eIndexBuffer)
@@ -185,24 +217,25 @@ class Test final : public ignis::IEngine {
 
         m_pipeline = ignis::getValue(ignis::GraphicsPipelineBuilder { m_pipelineLayout, getGlobalResourceScope() }
             .addVertexBinding<Vertex>(0)
-            .addInstanceBinding<Instance>(1)
             .addVertexAttribute<glm::vec3>(0, 0, __offsetof(Vertex, position))
             .addVertexAttribute<glm::vec4>(0, 1, __offsetof(Vertex, color))
-            .addVertexAttribute<glm::mat4>(1, 2, __offsetof(Instance, transform))
+            .addInstanceBinding<InstanceData>(1)
+            .addVertexAttribute<glm::mat4>(1, 2, __offsetof(InstanceData, transform))
             .addColorAttachmentFormat(getVkbSwapchain().image_format)
             .setDepthAttachmentFormat(getDepthBuffer()->getFormat())
-            .addAttachmentBlendState(ignis::GraphicsPipelineBuilder::defaultAttachmentBlendState())
-            .setDepthStencilState(ignis::GraphicsPipelineBuilder::defaultDepthStencilState())
-            .addViewport(vk::Viewport {})
-            .addScissor(vk::Rect2D {})
+            .addAttachmentBlendState()
+            .setDepthStencilState()
             .addStageFromFile("shaders/shader.vert.spv", "main", vk::ShaderStageFlagBits::eVertex)
             .addStageFromFile("shaders/shader.frag.spv", "main", vk::ShaderStageFlagBits::eFragment)
             .build(), "Failed to create pipeline");
     }
     
-    void recordDrawCommands(vk::CommandBuffer cmd) {
-        m_camera.m_buffers[getInFlightIndex()].copyData(m_camera.getUniformData());
-        m_instanceBuffer.copyData(m_instances);
+    void recordDrawCommands(vk::CommandBuffer cmd, vk::Extent2D viewport) {
+        m_camera.m_buffers[getInFlightIndex()].copyData(m_camera.getUniformData(viewport));
+
+        std::vector<InstanceData> instanceData(m_instances.size());
+        for (int i = 0; i < m_instances.size(); i++) instanceData[i] = m_instances[i];
+        m_instanceBuffer.copyData(instanceData);
 
         cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, m_pipeline);
 
@@ -222,6 +255,10 @@ class Test final : public ignis::IEngine {
         static float yaw      = 0.f;
         static float pitch    = 0.f;
         static float distance = 5.f;
+
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 3.0f);
+        ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 3.0f);
+        ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 3.0f);
 
         getLog().draw();
 
@@ -246,7 +283,15 @@ class Test final : public ignis::IEngine {
                 std::snprintf(instanceID, sizeof(instanceID), "Instance: %d", i);
 
                 if (ImGui::TreeNode(instanceID)) {
-                    ImGui::DragFloat3("Position", &m_instances[i].transform[3][0], 0.1f);
+                    glm::vec3 eulerRotation = glm::eulerAngles(m_instances[i].rotation);
+                    for (int i = 0; i < 3; i++) eulerRotation[i] = glm::degrees(eulerRotation[i]);
+
+                    ImGui::DragFloat3("Position", &m_instances[i].position[0], 0.1f);
+                    ImGui::DragFloat3("Scale",    &m_instances[i].scale[0],    0.1f);
+                    ImGui::DragFloat3("Rotation", &eulerRotation[0],           1.0f);
+
+                    for (int i = 0; i < 3; i++) eulerRotation[i] = glm::radians(eulerRotation[i]);
+                    m_instances[i].rotation = glm::quat(eulerRotation);
                     ImGui::TreePop();
                 }
             }
@@ -255,6 +300,8 @@ class Test final : public ignis::IEngine {
         }
 
         ImGui::End();
+
+        ImGui::PopStyleVar(3);
     }
 
     std::string getName()       { return "Test"; }

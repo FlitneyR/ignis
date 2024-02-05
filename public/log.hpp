@@ -2,6 +2,12 @@
 
 #include "libraries.hpp"
 
+#define IGNIS_LOG(category, type, msg) { \
+    std::stringstream ss; \
+    ss << msg; \
+    ignis::IEngine::get().getLog().addEntry({ category, ignis::Log::Type::type, ss.str() }); \
+    }
+
 namespace ignis {
 
 class Log {

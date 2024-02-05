@@ -295,7 +295,7 @@ Allocated<Image> ImageBuilder::load(const char* filename) {
 
     vk::resultCheck(device.waitForFences(fence, true, UINT64_MAX), "Failed to wait for image load fence");
 
-    IEngine::get().getLog().addEntry({ "Image", Log::Type::Info, std::string("Loaded image file: ") + std::string(filename) });
+    IGNIS_LOG("Image", Info, "Loaded image file" << filename);
 
     return ret;
 }

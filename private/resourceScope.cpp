@@ -18,7 +18,7 @@ void ResourceScope::addDeferredCleanupFunction(std::function<void()> func) {
 
 void ResourceScope::executeDeferredCleanupFunctions() {
     if (!m_name.empty())
-        IEngine::get().getLog().addEntry({ "ResourceScope", Log::Type::Info, "Cleaning up: " + m_name });
+        IGNIS_LOG("Resource Scope", Info, "Cleaning up: " << m_name);
 
     while (!m_deferredCleanupCommands.empty()) {
         m_deferredCleanupCommands.back()();
