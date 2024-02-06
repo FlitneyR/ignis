@@ -7,12 +7,12 @@ namespace ignis {
 class BuilderBase {
 protected:
     ResourceScope& r_scope;
+    vk::Device   getDevice();
+    VmaAllocator getAllocator();
 
 public:
     BuilderBase(ResourceScope& scope) : r_scope(scope) {}
 
-    vk::Device   getDevice();
-    VmaAllocator getAllocator();
 };
 
 template<typename Type>

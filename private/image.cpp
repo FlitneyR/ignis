@@ -2,8 +2,8 @@
 #include "engine.hpp"
 #include "bufferBuilder.hpp"
 #include "common.hpp"
-
-#include "external/stb_image.h"
+#include "libraries.hpp"
+#include <stdlib.h>
 
 namespace ignis {
 
@@ -249,6 +249,16 @@ Allocated<Image> ImageBuilder::load(const char* filename) {
 
     if (!data) throw std::runtime_error(std::string("Failed to open file") + std::string(filename));
 
+    auto ret = load(data, width, height);
+
+    IGNIS_LOG("Image", Info, "Loaded image file" << filename);
+
+    return ret;
+}
+
+Allocated<Image> ImageBuilder::load(const void* data, uint32_t width, uint32_t height) {
+    ResourceScope tempScope { "ImageBuilder::load(bytes)" };
+
     setSize({ width, height, 1 });
     addUsage(vk::ImageUsageFlagBits::eTransferDst);
     Allocated<Image> ret = build();
@@ -256,7 +266,7 @@ Allocated<Image> ImageBuilder::load(const char* filename) {
     ignis::Allocated<vk::Buffer> stagingBuffer = getValue(BufferBuilder { tempScope }
         .setAllocationUsage(VMA_MEMORY_USAGE_CPU_TO_GPU)
         .setBufferUsage(vk::BufferUsageFlagBits::eTransferSrc)
-        .setSizeBuildAndCopyData(static_cast<uint8_t*>(data), width * height * 4),
+        .setSizeBuildAndCopyData(static_cast<const uint8_t*>(data), width * height * 4),
         "Failed to create staging buffer for image load");
     
     IEngine& engine = IEngine::get();
@@ -295,7 +305,7 @@ Allocated<Image> ImageBuilder::load(const char* filename) {
 
     vk::resultCheck(device.waitForFences(fence, true, UINT64_MAX), "Failed to wait for image load fence");
 
-    IGNIS_LOG("Image", Info, "Loaded image file" << filename);
+    IGNIS_LOG("Image", Info, "Loaded image from bytes");
 
     return ret;
 }

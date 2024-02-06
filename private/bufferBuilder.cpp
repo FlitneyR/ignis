@@ -30,7 +30,9 @@ BufferBuilder& BufferBuilder::setSize(uint32_t size) {
 vk::ResultValue<Allocated<vk::Buffer>> BufferBuilder::build() {
     Allocated<vk::Buffer> value;
 
-    VkBufferCreateInfo bufferCreateInfo = m_bufferCreateInfo;
+    VkBufferCreateInfo bufferCreateInfo = m_bufferCreateInfo
+        .setQueueFamilyIndices(m_queueFamilyIndices);
+    
     VkBuffer buffer;
 
     vk::Result result { vmaCreateBuffer(getAllocator(), &bufferCreateInfo, &m_allocationCreateInfo, &buffer, &value.m_allocation, nullptr) };

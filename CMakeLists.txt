@@ -52,7 +52,9 @@ add_library(engine
     private/descriptorSet.cpp
     private/descriptorSetBuilder.cpp
     private/log.cpp
-    private/external/stb_image_impl.cpp
+    private/gltf.cpp
+    private/camera.cpp
+    private/external/external_impl.cpp
 )
 
 target_link_libraries(engine PUBLIC Vulkan::Vulkan vk-bootstrap::vk-bootstrap glfw VulkanMemoryAllocator imgui)

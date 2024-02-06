@@ -1,14 +1,19 @@
 #include "log.hpp"
 #include "string"
 
+#include <iostream>
+
 namespace ignis {
 
 std::string Log::Entry::asString() {
-    return category + std::string(s_typeNames[static_cast<uint32_t>(type)]) + message;
+    return "[" + category + "] [" + std::string(s_typeNames[static_cast<uint32_t>(type)]) + "] " + message;
 }
 
 void Log::addEntry(Log::Entry entry) {
+    m_mutex.lock();
+    // std::cerr << entry.asString() << std::endl;
     m_entries.push_back(entry);
+    m_mutex.unlock();
 }
 
 void Log::draw() {

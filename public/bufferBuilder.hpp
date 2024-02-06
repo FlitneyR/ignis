@@ -11,9 +11,7 @@ class BufferBuilder : public IBuilder<vk::ResultValue<Allocated<vk::Buffer>>> {
     std::vector<uint32_t> m_queueFamilyIndices     {};
 
 public:
-    BufferBuilder(
-        ResourceScope& scope
-    );
+    BufferBuilder(ResourceScope& scope);
 
     BufferBuilder& addQueueFamilyIndices(std::vector<uint32_t> indices);
     BufferBuilder& setAllocationUsage(VmaMemoryUsage usage);

@@ -117,6 +117,7 @@ public:
 
     Allocated<Image> build() override;
     Allocated<Image> load(const char* filename);
+    Allocated<Image> load(const void* data, uint32_t width, uint32_t height);
 };
 
 class ImageViewBuilder : public IBuilder<vk::ImageView> {

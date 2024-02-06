@@ -72,7 +72,7 @@ vk::Result Allocated<vk::Buffer>::stagedCopyData(const void* data, uint32_t size
     engine.submitOneTimeCommandBuffer(cmd, vkb::QueueType::graphics, submitInfo, fence);
 
     if (async) {
-        std::thread cleanUpAndSignalFence ([=, device = device, fence = fence]() {
+        std::thread cleanUpAndSignalFence ([=]() {
             auto _ = device.waitForFences(fence, true, UINT64_MAX);
             delete tempScope;
         });

@@ -1,22 +1,18 @@
 #pragma once
 
 #include "libraries.hpp"
-
-#define IGNIS_LOG(category, type, msg) { \
-    std::stringstream ss; \
-    ss << msg; \
-    ignis::IEngine::get().getLog().addEntry({ category, ignis::Log::Type::type, ss.str() }); \
-    }
+#include <mutex>
 
 namespace ignis {
 
 class Log {
 public:
     enum class Type : uint8_t {
-        Info = 0,
-        Warning,
+        Verbose = 0,
+        Info,
         Debug,
-        Verbose,
+        Warning,
+        Error,
     };
 
     struct Entry {
@@ -31,12 +27,13 @@ public:
     void draw();
 
 private:
-    static constexpr std::array<const char*, 4> s_typeNames {
-        "Info", "Warning", "Verbose"
+    static constexpr const char* s_typeNames[5] {
+        "Verbose", "Info", "Debug", "Warning", "Error"
     };
 
     std::vector<Entry> m_entries;
     ImGuiTextFilter    m_filter;
+    std::mutex         m_mutex;
 
 };
 
