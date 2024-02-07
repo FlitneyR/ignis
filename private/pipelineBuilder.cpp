@@ -94,7 +94,9 @@ ComputePipelineBuilder& ComputePipelineBuilder::setFunctionName(const char* func
     return *this;
 }
 
-vk::ResultValue<vk::Pipeline> ComputePipelineBuilder::build() {
+vk::ResultValue<PipelineData> ComputePipelineBuilder::build() {
+    PipelineData ret { .layout = m_layout };
+
     auto pipeline_result = getDevice().createComputePipeline(nullptr, vk::ComputePipelineCreateInfo {}
         .setLayout(m_layout)
         .setStage(vk::PipelineShaderStageCreateInfo {}
@@ -103,13 +105,15 @@ vk::ResultValue<vk::Pipeline> ComputePipelineBuilder::build() {
             .setStage(vk::ShaderStageFlagBits::eCompute)));
     
     if (pipeline_result.result != vk::Result::eSuccess)
-        vk::ResultValue<vk::Pipeline> { pipeline_result.result, VK_NULL_HANDLE };
+        return vk::ResultValue<PipelineData> { pipeline_result.result, ret };
 
     r_scope.addDeferredCleanupFunction([=, device = getDevice(), pipeline = pipeline_result.value ] {
         device.destroyPipeline(pipeline);
     });
 
-    return vk::ResultValue<vk::Pipeline> { vk::Result::eSuccess, pipeline_result.value };
+    ret.pipeline = pipeline_result.value;
+
+    return vk::ResultValue<PipelineData> { vk::Result::eSuccess, ret };
 }
 
 GraphicsPipelineBuilder::GraphicsPipelineBuilder(
@@ -165,7 +169,9 @@ GraphicsPipelineBuilder& GraphicsPipelineBuilder::useDefaults() {
     return *this;
 }
 
-vk::ResultValue<vk::Pipeline> GraphicsPipelineBuilder::build() {
+vk::ResultValue<PipelineData> GraphicsPipelineBuilder::build() {
+    PipelineData ret { .layout = m_layout };
+
     m_dynamicState
         .setDynamicStates(m_dynamicStates);
 
@@ -203,13 +209,15 @@ vk::ResultValue<vk::Pipeline> GraphicsPipelineBuilder::build() {
     );
 
     if (pipelineResult.result != vk::Result::eSuccess)
-        return vk::ResultValue<vk::Pipeline> { pipelineResult.result, VK_NULL_HANDLE };
+        return vk::ResultValue<PipelineData> { pipelineResult.result, ret };
 
     r_scope.addDeferredCleanupFunction([=, device = getDevice(), pipeline = pipelineResult.value]() {
         device.destroyPipeline(pipeline);
     });
 
-    return vk::ResultValue<vk::Pipeline> { vk::Result::eSuccess, pipelineResult.value };
+    ret.pipeline = pipelineResult.value;
+
+    return vk::ResultValue<PipelineData> { vk::Result::eSuccess, ret };
 }
 
 GraphicsPipelineBuilder& GraphicsPipelineBuilder::setPipelineLayout(vk::PipelineLayout pl) {

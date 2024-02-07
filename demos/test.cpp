@@ -100,7 +100,6 @@ class Test final : public ignis::IEngine {
             ImGui::InputText("File name", filename, sizeof(filename));
 
             if (ImGui::Button("Load")) {
-                IGNIS_LOG("glTF", Debug, "Entered filename: " << filename);
                 m_models.emplace_back().loadAsync(filename);
                 filename[0] = '\0';
             }

@@ -20,9 +20,8 @@ class GLTFModel {
     std::vector<vk::ImageView>         m_imageViews;
     std::vector<vk::Sampler>           m_samplers;
 
-    static vk::Pipeline            s_pipeline;
-    static vk::Pipeline            s_backupPipeline;
-    static vk::PipelineLayout      s_pipelineLayout;
+    static PipelineData            s_pipeline;
+    static PipelineData            s_backupPipeline;
     static vk::DescriptorSetLayout s_materialLayout;
     static Allocated<Image>        s_nullImage;
     static vk::ImageView           s_nullImageView;
@@ -37,11 +36,23 @@ class GLTFModel {
     std::vector<DescriptorSetCollection> m_materials;
     std::vector<MaterialData> m_materialStructs;
 
-    struct Instance {
-        glm::mat4 transform;
-    };
+    struct Instance { glm::mat4 transform; };
 
     std::vector<std::vector<Instance>> m_instances;
+
+    struct BindingData {
+        PipelineData* pipelineData = nullptr;
+        int32_t positionAccessor   = -1;
+        int32_t texcoordAccessor   = -1;
+        int32_t tangentAccessor    = -1;
+        int32_t normalAccessor     = -1;
+
+        bool isValid() const { return pipelineData != nullptr; }
+    };
+
+    bool bind(vk::CommandBuffer cmd, const BindingData& data, vk::DescriptorSet cameraDescriptorSet, vk::DescriptorSet materialDescriptorSet);
+
+    std::vector<std::vector<BindingData>> m_bindingData;
 
     ResourceScope m_localScope;
     std::array<ResourceScope, 5> m_oneFrameScopes;

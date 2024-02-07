@@ -7,6 +7,11 @@
 
 namespace ignis {
 
+struct PipelineData {
+    vk::Pipeline       pipeline = VK_NULL_HANDLE;
+    vk::PipelineLayout layout   = VK_NULL_HANDLE;
+};
+
 class PipelineLayoutBuilder : IBuilder<vk::PipelineLayout> {
 public:
     std::vector<vk::DescriptorSetLayout> m_setLayouts {};
@@ -20,7 +25,7 @@ public:
     vk::PipelineLayout build();
 };
 
-class IPipelineBuilder : public IBuilder<vk::ResultValue<vk::Pipeline>> {
+class IPipelineBuilder : public IBuilder<vk::ResultValue<PipelineData>> {
 protected:
     vk::PipelineLayout m_layout;
     std::vector<vk::ShaderModule> m_modules;
@@ -47,7 +52,7 @@ public:
 
     ComputePipelineBuilder& modify(std::function<void(ComputePipelineBuilder&)> func) { func(*this); return *this; }
 
-    vk::ResultValue<vk::Pipeline> build() override;
+    vk::ResultValue<PipelineData> build() override;
 };
 
 class GraphicsPipelineBuilder : public IPipelineBuilder {
@@ -114,7 +119,7 @@ public:
 
     GraphicsPipelineBuilder& modify(std::function<void(GraphicsPipelineBuilder&)> func) { func(*this); return *this; }
 
-    vk::ResultValue<vk::Pipeline> build() override;
+    vk::ResultValue<PipelineData> build() override;
 
     static constexpr auto s_defaultAttachmentBlendState = vk::PipelineColorBlendAttachmentState {}
         .setColorWriteMask(
