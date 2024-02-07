@@ -10,7 +10,6 @@ public:
     enum class Type : uint8_t {
         Verbose = 0,
         Info,
-        Debug,
         Warning,
         Error,
     };
@@ -28,7 +27,7 @@ public:
 
 private:
     static constexpr const char* s_typeNames[5] {
-        "Verbose", "Info", "Debug", "Warning", "Error"
+        "Verbose", "Info", "Warning", "Error"
     };
 
     std::vector<Entry> m_entries;

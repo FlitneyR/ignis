@@ -38,6 +38,17 @@ float iblRoughnessProxy(float roughness) {
 }
 
 vec3 cookTorranceBRDF(vec3 albedo, vec3 normal, vec3 viewDir, vec3 radiance, vec3 lightDir, float metallic, float roughness, float ao) {
+    albedo = clamp(albedo, vec3(0), vec3(1));
+    radiance = max(vec3(0), radiance);
+
+    normal = normalize(normal);
+    viewDir = normalize(viewDir);
+    lightDir = normalize(lightDir);
+
+    ao = clamp(ao, 0, 1);
+    metallic = clamp(metallic, 0, 1);
+    roughness = clamp(roughness, 0.001, 1);
+
     vec3 lambertionDiffuse = albedo / PI;
 
     vec3 halfway = normalize(lightDir + viewDir);
