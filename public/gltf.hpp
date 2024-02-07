@@ -11,6 +11,8 @@
 namespace ignis {
 
 class GLTFModel {
+    std::string m_filename;
+
     gltf::Model m_model;
 
     std::vector<Allocated<vk::Buffer>> m_buffers;
@@ -18,8 +20,12 @@ class GLTFModel {
     std::vector<vk::ImageView>         m_imageViews;
     std::vector<vk::Sampler>           m_samplers;
 
-    std::vector<vk::PipelineLayout> m_pipelineLayouts;
-    std::vector<vk::Pipeline>       m_pipelines;
+    static vk::Pipeline            s_pipeline;
+    static vk::Pipeline            s_backupPipeline;
+    static vk::PipelineLayout      s_pipelineLayout;
+    static vk::DescriptorSetLayout s_materialLayout;
+    static Allocated<Image>        s_nullImage;
+    static vk::ImageView           s_nullImageView;
 
     struct MaterialData {
         alignas(16) glm::vec3 emissiveFactor;
@@ -42,13 +48,22 @@ class GLTFModel {
     void updateInstances(uint32_t scene = 0) { updateInstances(m_model.scenes[scene]); }
     void updateInstances(gltf::Scene& scene);
 
-    void bindBuffer(vk::CommandBuffer cmd, gltf::Primitive primitive, const char* name);
+    /**
+     * @brief Bind a vertex buffer by name
+     * 
+     * @return true if the primitive contains a vertex attribute with the given name, otherwise false
+     */
+    bool bindBuffer(vk::CommandBuffer cmd, gltf::Primitive primitive, const char* name, uint32_t binding);
 
+    static constexpr std::vector<std::string> s_supportedExtensions {};
+
+    bool extensionIsSupported(const std::string& extension);
+
+    bool checkCompatibility();
     bool setupBuffers(ResourceScope& scope);
     bool setupImages(ResourceScope& scope);
     bool setupSamplers(ResourceScope& scope);
     bool setupMaterials(ResourceScope& scope);
-    bool setupPipelines(ResourceScope& scope, vk::DescriptorSetLayout cameraUniformLayout);
 
 public:
     enum Status {
@@ -62,11 +77,15 @@ public:
     GLTFModel(GLTFModel&& other) = default;
     GLTFModel& operator =(GLTFModel&& other) = default;
 
-    bool load(std::string filename, bool async = false);
+    static bool setupStatics(ResourceScope& scope, vk::DescriptorSetLayout cameraUniformLayout);
+
+    bool load(const std::string& filename, bool async = false);
     bool setup(ResourceScope& scope, vk::DescriptorSetLayout cameraUniformLayout);
     void draw(vk::CommandBuffer cmd, Camera& camera);
 
-    Status status() { return m_status; }
+    Status status() const { return m_status; }
+
+    std::string& getFileName() { return m_filename; }
 
     void renderUI();
     void renderSceneUI(uint32_t index = 0) { renderSceneUI(m_model.scenes[index]); }

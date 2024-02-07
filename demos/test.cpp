@@ -57,6 +57,8 @@ class Test final : public ignis::IEngine {
 
     void setup() override {
         m_camera.setup(getGlobalResourceScope());
+
+        ignis::GLTFModel::setupStatics(getGlobalResourceScope(), m_camera.m_descriptorSets.getLayout());
     }
 
     void update() override {
@@ -117,9 +119,18 @@ class Test final : public ignis::IEngine {
                           * glm::vec4 { 0.f, -distance, 0.f, 1.f };
         m_camera.forward = -m_camera.position;
 
-        for (auto& model : m_models)
-        if (model.isReady())
-            model.renderUI();
+        int i = 0;
+
+        for (auto& model : m_models) {
+            if (ImGui::TreeNode(model.getFileName().c_str())) {
+                if (model.isReady()) {
+                    model.renderUI();
+                }
+
+                ImGui::TreePop();
+            }
+            i++;
+        }
 
         ImGui::End();
 

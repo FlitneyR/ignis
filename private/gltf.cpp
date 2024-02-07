@@ -7,7 +7,16 @@
 
 namespace ignis {
 
-bool GLTFModel::load(std::string filename, bool async) {
+vk::Pipeline            GLTFModel::s_pipeline       = VK_NULL_HANDLE;
+vk::PipelineLayout      GLTFModel::s_pipelineLayout = VK_NULL_HANDLE;
+vk::DescriptorSetLayout GLTFModel::s_materialLayout = VK_NULL_HANDLE;
+vk::Pipeline            GLTFModel::s_backupPipeline = VK_NULL_HANDLE;
+Allocated<Image>        GLTFModel::s_nullImage      = {};
+vk::ImageView           GLTFModel::s_nullImageView  = VK_NULL_HANDLE;
+
+bool GLTFModel::load(const std::string& filename, bool async) {
+    m_filename = filename;
+
     if (async) {
         std::thread([&, filename]() {
             load(filename);
@@ -43,6 +52,31 @@ bool GLTFModel::load(std::string filename, bool async) {
     return true;
 }
 
+bool GLTFModel::extensionIsSupported(const std::string& extension) {
+    for (auto& supportedExtension : s_supportedExtensions)
+        if (supportedExtension == extension) return true;
+    
+    return false;
+}
+
+bool GLTFModel::checkCompatibility() {
+    if (m_model.skins.size() > 0)
+        IGNIS_LOG("glTF", Warning, "Model " << getFileName() << " uses skinning which is not supported");
+
+    for (auto& extension : m_model.extensionsUsed)
+    if (!extensionIsSupported(extension))
+        IGNIS_LOG("glTF", Warning, "Model " << getFileName() << " uses unsupported extension " << extension);
+    
+    bool anyMissingRequiredExtensions = false;
+    for (auto& extension : m_model.extensionsRequired)
+    if (!extensionIsSupported(extension)) {
+        anyMissingRequiredExtensions = true;
+        IGNIS_LOG("glTF", Error, "Model " << getFileName() << " requires unsupported extension " << extension);
+    }
+
+    return !anyMissingRequiredExtensions;
+}
+
 bool GLTFModel::setupBuffers(ResourceScope& scope) {
     for (int i = 0; i < m_model.buffers.size(); i++) {
         auto bufferUsage = vk::BufferUsageFlagBits::eVertexBuffer
@@ -67,11 +101,34 @@ bool GLTFModel::setupBuffers(ResourceScope& scope) {
 }
 
 bool GLTFModel::setupImages(ResourceScope& scope) {
-    for (auto& image : m_model.images) {
+    // workout image formats
+    std::vector<vk::Format> imageFormats(m_model.images.size(), vk::Format::eR8G8B8A8Unorm);
+
+    for (auto& material : m_model.materials) {
+        #define SET_IMAGE_FORMAT(index, format) if (index >= 0) { \
+            uint32_t textureIndex = m_model.textures[index].source; \
+            if (textureIndex >= 0) { \
+                imageFormats[textureIndex] = vk::Format::format; \
+                IGNIS_LOG("glTF", Debug, "Set image[" << textureIndex << "] format to " #format); \
+            } \
+        }
+
+        SET_IMAGE_FORMAT(material.normalTexture.index, eR8G8B8A8Unorm);
+        SET_IMAGE_FORMAT(material.emissiveTexture.index, eR8G8B8A8Srgb);
+        SET_IMAGE_FORMAT(material.occlusionTexture.index, eR8G8B8A8Unorm);
+        SET_IMAGE_FORMAT(material.pbrMetallicRoughness.baseColorTexture.index, eR8G8B8A8Srgb);
+        SET_IMAGE_FORMAT(material.pbrMetallicRoughness.metallicRoughnessTexture.index, eR8G8B8A8Unorm);
+
+        #undef SET_IMAGE_FORMAT
+    }
+
+    for (int i = 0; i < m_model.images.size(); i++) {
+        auto& image = m_model.images[i];
         m_images.push_back(ImageBuilder { scope }
             .setInitialLayout(vk::ImageLayout::eShaderReadOnlyOptimal)
+            .setFormat(imageFormats[i])
             .load(&image.image[0], image.width, image.height));
-        
+
         m_imageViews.push_back(ImageViewBuilder { *m_images.back(), scope }
             .build());
     }
@@ -131,24 +188,10 @@ bool GLTFModel::setupMaterials(ResourceScope& scope) {
         .setMaxSetCount(materialCount)
         .addPoolSize({ vk::DescriptorType::eCombinedImageSampler, 5 * materialCount })
         .build();
-
-    auto binding = vk::DescriptorSetLayoutBinding {}
-        .setBinding(0)
-        .setDescriptorCount(1)
-        .setDescriptorType(vk::DescriptorType::eCombinedImageSampler)
-        .setStageFlags(vk::ShaderStageFlagBits::eAllGraphics);
-
-    vk::DescriptorSetLayout materialLayout = DescriptorLayoutBuilder { scope }
-        .addBinding(binding.setBinding(0))
-        .addBinding(binding.setBinding(1))
-        .addBinding(binding.setBinding(2))
-        .addBinding(binding.setBinding(3))
-        .addBinding(binding.setBinding(4))
-        .build();
     
     for (auto& material : m_model.materials) {
         m_materials.push_back(DescriptorSetBuilder { scope, materialPool }
-            .addLayouts(materialLayout)
+            .addLayouts(s_materialLayout)
             .build());
         
         std::vector<int> textureIDs {
@@ -167,7 +210,7 @@ bool GLTFModel::setupMaterials(ResourceScope& scope) {
 
             imageInfos.push_back(vk::DescriptorImageInfo {}
                 .setImageLayout(vk::ImageLayout::eShaderReadOnlyOptimal)
-                .setImageView(texture.source < 0 ? VK_NULL_HANDLE : m_imageViews[texture.source])
+                .setImageView(texture.source < 0 ? s_nullImageView : m_imageViews[texture.source])
                 .setSampler(m_samplers[std::min<uint32_t>(texture.sampler + 1, m_samplers.size() - 1)]));
             
             descriptorWrites.push_back(vk::WriteDescriptorSet {}
@@ -181,7 +224,10 @@ bool GLTFModel::setupMaterials(ResourceScope& scope) {
         }
 
         m_materialStructs.push_back(MaterialData {
-            .emissiveFactor = { material.emissiveFactor[0], material.emissiveFactor[1], material.emissiveFactor[2] },
+            .emissiveFactor = {
+                material.emissiveFactor[0],
+                material.emissiveFactor[1],
+                material.emissiveFactor[2] },
             .baseColorFactor = {
                 material.pbrMetallicRoughness.baseColorFactor[0],
                 material.pbrMetallicRoughness.baseColorFactor[1],
@@ -196,67 +242,67 @@ bool GLTFModel::setupMaterials(ResourceScope& scope) {
     return true;
 }
 
-bool GLTFModel::setupPipelines(ResourceScope& scope, vk::DescriptorSetLayout cameraUniformLayout) {
-    for (auto& material : m_materials)
-        m_pipelineLayouts.push_back(PipelineLayoutBuilder { scope }
+bool GLTFModel::setupStatics(ResourceScope& scope, vk::DescriptorSetLayout cameraUniformLayout) {
+    scope.addDeferredCleanupFunction([&]() {
+        s_pipeline       = VK_NULL_HANDLE;
+        s_pipelineLayout = VK_NULL_HANDLE;
+        s_materialLayout = VK_NULL_HANDLE;
+        s_backupPipeline = VK_NULL_HANDLE;
+        s_nullImage      = {};
+        s_nullImageView  = VK_NULL_HANDLE;
+    });
+
+    { // build null image
+        uint8_t nullImageColor[] = { 1, 1, 1, 1 };
+
+        s_nullImage = ImageBuilder { scope }
+            .setInitialLayout(vk::ImageLayout::eShaderReadOnlyOptimal)
+            .setFormat(vk::Format::eR8G8B8A8Unorm)
+            .load(nullImageColor, 1, 1);
+        
+        s_nullImageView = ImageViewBuilder { *s_nullImage, scope }
+            .build();
+    }
+
+    { // build material layouts
+        auto binding = vk::DescriptorSetLayoutBinding {}
+            .setDescriptorCount(1)
+            .setDescriptorType(vk::DescriptorType::eCombinedImageSampler)
+            .setStageFlags(vk::ShaderStageFlagBits::eAllGraphics);
+
+        s_materialLayout = DescriptorLayoutBuilder { scope }
+            .addBinding(binding.setBinding(0))
+            .addBinding(binding.setBinding(1))
+            .addBinding(binding.setBinding(2))
+            .addBinding(binding.setBinding(3))
+            .addBinding(binding.setBinding(4))
+            .build();
+    }
+
+    { // build default pipeline
+        s_pipelineLayout = PipelineLayoutBuilder { scope }
             .addSet(cameraUniformLayout)
-            .addSet(material.getLayout())
+            .addSet(s_materialLayout)
             .addPushConstantRange(vk::PushConstantRange {}
                 .setSize(sizeof(MaterialData))
                 .setStageFlags(vk::ShaderStageFlagBits::eAllGraphics))
-            .build());
-
-    for (auto& mesh : m_model.meshes)
-    for (auto& primitive : mesh.primitives) {
-        auto pipelineBuilder = GraphicsPipelineBuilder { m_pipelineLayouts[primitive.material], scope }
+            .build();
+        
+        auto pipelineBuilder = GraphicsPipelineBuilder { s_pipelineLayout, scope }
             .addColorAttachmentFormat(IEngine::get().getVkbSwapchain().image_format)
             .setDepthAttachmentFormat(IEngine::get().getDepthBuffer()->getFormat())
             .addAttachmentBlendState()
-            .setDepthStencilState();
-
-        bool foundPositionBinding = false;
-        bool foundUVBinding = false;
-        bool foundNormalBinding = false;
-        bool foundTangentBinding = false;
-
-        for (auto& attribute : primitive.attributes) {
-            if (attribute.first == "POSITION") {
-                pipelineBuilder
-                    .addVertexAttribute<glm::vec3>(attribute.second, 0, 0)
-                    .addVertexBinding<glm::vec3>(attribute.second);
-                foundPositionBinding = true;
-            }
-            
-            if (attribute.first == "TEXCOORD_0") {
-                pipelineBuilder
-                    .addVertexAttribute<glm::vec2>(attribute.second, 1, 0)
-                    .addVertexBinding<glm::vec2>(attribute.second);
-                foundUVBinding = true;
-            }
-            
-            if (attribute.first == "NORMAL") {
-                pipelineBuilder
-                    .addVertexAttribute<glm::vec3>(attribute.second, 2, 0)
-                    .addVertexBinding<glm::vec3>(attribute.second);
-                foundNormalBinding = true;
-            }
-            
-            if (attribute.first == "TANGENT") {
-                pipelineBuilder
-                    .addVertexAttribute<glm::vec4>(attribute.second, 3, 0)
-                    .addVertexBinding<glm::vec4>(attribute.second);
-                foundTangentBinding = true;
-            }
-        }
-
-        if (!(foundPositionBinding && foundUVBinding && foundNormalBinding && foundTangentBinding)) {
-            if (!foundPositionBinding) IGNIS_LOG("glTF", Error, "Failed to create glTF model pipeline, no POSITION vertex attribute");
-            if (!foundTangentBinding)  IGNIS_LOG("glTF", Error, "Failed to create glTF model pipeline, no TANGENT vertex attribute");
-            if (!foundNormalBinding)   IGNIS_LOG("glTF", Error, "Failed to create glTF model pipeline, no NORMAL vertex attribute");
-            if (!foundUVBinding)       IGNIS_LOG("glTF", Error, "Failed to create glTF model pipeline, no TEXCOORD_0 vertex attribute");
-
-            return false;
-        }
+            .setDepthStencilState()
+            .addVertexAttribute<glm::vec3>(0, 0, 0) // POSITION
+            .addVertexBinding<glm::vec3>(0)
+            .addVertexAttribute<glm::vec2>(1, 1, 0) // TEXCOORD_0
+            .addVertexBinding<glm::vec2>(1)
+            .addVertexAttribute<glm::vec3>(2, 2, 0) // NORMAL
+            .addVertexBinding<glm::vec3>(2)
+            .addVertexAttribute<glm::vec4>(3, 3, 0) // TANGENT
+            .addVertexBinding<glm::vec4>(3)
+            .addVertexAttribute<glm::mat4>(4, 4, 0) // instance
+            .addInstanceBinding<Instance>(4);
         
         try {
             pipelineBuilder
@@ -267,9 +313,39 @@ bool GLTFModel::setupPipelines(ResourceScope& scope, vk::DescriptorSetLayout cam
             return false;
         }
 
-        pipelineBuilder
-            .addVertexAttribute<glm::mat4>(10, 4, 0)
-            .addInstanceBinding<Instance>(10);
+        auto pipelineResult = pipelineBuilder.build();
+
+        if (pipelineResult.result != vk::Result::eSuccess) {
+            IGNIS_LOG("glTF", Error, "Failed to create pipeline: " << pipelineResult.result);
+            return false;
+        }
+
+        s_pipeline = pipelineResult.value;
+    }
+
+    { // build backup pipeline
+        auto pipelineBuilder = GraphicsPipelineBuilder { s_pipelineLayout, scope }
+            .addColorAttachmentFormat(IEngine::get().getVkbSwapchain().image_format)
+            .setDepthAttachmentFormat(IEngine::get().getDepthBuffer()->getFormat())
+            .addAttachmentBlendState()
+            .setDepthStencilState()
+            .addVertexAttribute<glm::vec3>(0, 0, 0) // POSITION
+            .addVertexBinding<glm::vec3>(0)
+            .addVertexAttribute<glm::vec2>(1, 1, 0) // TEXCOORD_0
+            .addVertexBinding<glm::vec2>(1)
+            .addVertexAttribute<glm::vec3>(2, 2, 0) // NORMAL
+            .addVertexBinding<glm::vec3>(2)
+            .addVertexAttribute<glm::mat4>(4, 3, 0) // instance
+            .addInstanceBinding<Instance>(4);
+        
+        try {
+            pipelineBuilder
+                .addStageFromFile("shaders/gltf_backup.vert.spv", "main", vk::ShaderStageFlagBits::eVertex)
+                .addStageFromFile("shaders/gltf_backup.frag.spv", "main", vk::ShaderStageFlagBits::eFragment);
+        } catch (std::runtime_error& e) {
+            IGNIS_LOG("glTF", Error, "Error while loading glTF shader: " << e.what());
+            return false;
+        }
 
         auto pipelineResult = pipelineBuilder.build();
 
@@ -278,24 +354,32 @@ bool GLTFModel::setupPipelines(ResourceScope& scope, vk::DescriptorSetLayout cam
             return false;
         }
 
-        m_pipelines.push_back(pipelineResult.value);
+        s_backupPipeline = pipelineResult.value;
     }
 
     return true;
 }
 
 bool GLTFModel::setup(ResourceScope& scope, vk::DescriptorSetLayout cameraUniformLayout) {
+    if (!s_pipeline) {
+        IGNIS_LOG("glTF", Error, "Trying to setup glTF model before setting up glTF shared resources." <<
+                                 "Call GLTFModel::setupPipelines() before setting up any models");
+        
+        m_status = Failed;
+        return false;
+    }
+
     vk::Device device = IEngine::get().getDevice();
     
     for (auto& s : m_oneFrameScopes) 
         scope.addDeferredCleanupFunction([&]() { s.executeDeferredCleanupFunctions(); });
 
     bool success = true
+        && checkCompatibility()
         && setupBuffers(scope)
         && setupImages(scope)
         && setupSamplers(scope)
-        && setupMaterials(scope)
-        && setupPipelines(scope, cameraUniformLayout);
+        && setupMaterials(scope);
 
     m_status = success ? Ready : Failed;
 
@@ -322,13 +406,19 @@ void GLTFModel::updateInstances(gltf::Scene& scene) {
     }
 }
 
-void GLTFModel::bindBuffer(vk::CommandBuffer cmd, gltf::Primitive primitive, const char* name) {
-    auto& accessorIndex = primitive.attributes.at(name);
+bool GLTFModel::bindBuffer(vk::CommandBuffer cmd, gltf::Primitive primitive, const char* name, uint32_t binding) {
+    auto it = primitive.attributes.find(name);
+
+    if (it == primitive.attributes.end()) return false;
+
+    auto& accessorIndex = it->second;
     auto& accessor = m_model.accessors[accessorIndex];
     auto& bufferView = m_model.bufferViews[accessor.bufferView];
     auto& buffer = m_buffers[bufferView.buffer];
 
-    cmd.bindVertexBuffers(accessorIndex, *buffer, bufferView.byteOffset, {});
+    cmd.bindVertexBuffers(binding, *buffer, bufferView.byteOffset, {});
+
+    return true;
 }
 
 void GLTFModel::draw(vk::CommandBuffer cmd, ignis::Camera& camera) {
@@ -353,26 +443,25 @@ void GLTFModel::draw(vk::CommandBuffer cmd, ignis::Camera& camera) {
         instanceBuffers.push_back(bufferResult.value);
     }
 
-    uint32_t pipelineID = 0;
-
     for (int meshID = 0; meshID < m_model.meshes.size(); meshID++) {
         auto& mesh = m_model.meshes[meshID];
         for (auto& primitive : mesh.primitives) {
-            auto& layout = m_pipelineLayouts[primitive.material];
-
             vk::DescriptorSet cameraDescriptorSet = camera.m_descriptorSets.getSet(IEngine::get().getInFlightIndex());
 
-            cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, m_pipelines[pipelineID++]);
-            cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, layout, 0, cameraDescriptorSet, {});
-            cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, layout, 1, m_materials[primitive.material].getSet(), {});
-            cmd.pushConstants<MaterialData>(layout, vk::ShaderStageFlagBits::eAllGraphics, 0, m_materialStructs[primitive.material]);
+            bool positionFound = bindBuffer(cmd, primitive, "POSITION", 0);
+            bool texcoordFound = bindBuffer(cmd, primitive, "TEXCOORD_0", 1);
+            bool normalFound =   bindBuffer(cmd, primitive, "NORMAL", 2);
+            bool tangentFound =  bindBuffer(cmd, primitive, "TANGENT", 3);
+            cmd.bindVertexBuffers(4, *instanceBuffers[meshID], { 0 }, {});
 
-            bindBuffer(cmd, primitive, "POSITION");
-            bindBuffer(cmd, primitive, "TEXCOORD_0");
-            bindBuffer(cmd, primitive, "NORMAL");
-            bindBuffer(cmd, primitive, "TANGENT");
+            bool useBackupPipeline = !tangentFound;
 
-            cmd.bindVertexBuffers(10, *instanceBuffers[meshID], { 0 }, {});
+            vk::Pipeline& pipeline = useBackupPipeline ? s_backupPipeline : s_pipeline;
+
+            cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, pipeline);
+            cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, s_pipelineLayout, 0, cameraDescriptorSet, {});
+            cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, s_pipelineLayout, 1, m_materials[primitive.material].getSet(), {});
+            cmd.pushConstants<MaterialData>(s_pipelineLayout, vk::ShaderStageFlagBits::eAllGraphics, 0, m_materialStructs[primitive.material]);
 
             auto& indexAccessor = m_model.accessors[primitive.indices];
             uint32_t indexCount = indexAccessor.count;

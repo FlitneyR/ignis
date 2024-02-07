@@ -52,13 +52,13 @@ public:
     Image() = default;
 
     Image(
-        vk::Image       image,
-        vk::Format      format,
-        vk::Extent3D    extent,
-        vk::ImageAspectFlags m_aspectmask,
-        uint32_t        mipLevelCount = 1,
-        uint32_t        arrayLayerCount = 1,
-        vk::ImageLayout initialLayout = vk::ImageLayout::eUndefined
+        vk::Image            image,
+        vk::Format           format,
+        vk::Extent3D         extent,
+        vk::ImageAspectFlags aspectMask,
+        uint32_t             mipLevelCount = 1,
+        uint32_t             arrayLayerCount = 1,
+        vk::ImageLayout      initialLayout = vk::ImageLayout::eUndefined
     );
 
     Image(Image&& other) = default;
