@@ -1,5 +1,7 @@
 #version 450
 
+#include "pbr.glsl"
+
 layout (location = 0) out vec4 f_color;
 
 layout (location = 0) in vec3 i_campos;
@@ -27,7 +29,7 @@ layout ( push_constant ) uniform Material {
     float roughnessFactor;
 } material;
 
-const vec3 lightCol =           vec3(10.0);
+const vec3 lightCol =           vec3(5.0);
 const vec3 lightDir = normalize(vec3(0.0, 0.0, 1.0));
 const vec3 ambient  =           vec3(0.05);
 
@@ -37,17 +39,16 @@ void main() {
     vec4  albedo       = texture(t_albedo, i_uv) * material.baseColorFactor;
     vec3  normalTSpace = texture(t_normal, i_uv).rgb - 0.5;
     vec3  emissive     = texture(t_emissive, i_uv).rgb * material.emissiveFactor;
-    float metallic     = metalRough.x * material.metallicFactor;
-    float roughness    = metalRough.y * material.roughnessFactor;
+    float metallic     = metalRough.g * material.metallicFactor;
+    float roughness    = metalRough.r * material.roughnessFactor;
+    vec3  viewDir      = normalize(i_campos - i_position.xyz);
+    vec3  normal       = normalize(mat3(i_tangent, i_bitangent, i_normal) * normalTSpace);
 
-    vec3  viewDir = normalize(i_campos - i_position.xyz);
-    vec3  halfway = normalize(viewDir + lightDir);
-    vec3  normal  = normalize(mat3(i_tangent, i_bitangent, i_normal) * normalTSpace);
+    f_color.rgb += cookTorranceBRDF(albedo.rgb, normal, viewDir, lightCol, lightDir, metallic, roughness, ao);
+    f_color.rgb += albedo.rgb * ambient * ao;
+    f_color.rgb += emissive;
 
-    vec3  diffuse  =    (lightCol * max(dot(lightDir, normal), 0) * roughness + ambient)   * ao * albedo.rgb;
-    vec3  specular = lightCol * pow(max(dot(halfway,  normal), 0), (20.0 * (2.0 - roughness))) * mix(vec3(0.05), albedo.rgb, metallic);
-    vec3  lighting = specular + diffuse;
+    f_color.rgb /= f_color.rgb + 1.0;
 
-    f_color.rgb = lighting + emissive;
     f_color.a = albedo.a;
 }
