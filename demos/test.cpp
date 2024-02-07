@@ -59,12 +59,14 @@ class Test final : public ignis::IEngine {
         m_camera.setup(getGlobalResourceScope());
 
         ignis::GLTFModel::setupStatics(getGlobalResourceScope(), m_camera.m_descriptorSets.getLayout());
+
+        getGlobalResourceScope().addDeferredCleanupFunction([&]() { m_models.clear(); });
     }
 
     void update() override {
         for (auto& model : m_models)
         if (model.shouldSetup())
-            model.setup(getGlobalResourceScope(), m_camera.m_descriptorSets.getLayout());
+            model.setup(m_camera.m_descriptorSets.getLayout());
     }
     
     void recordDrawCommands(vk::CommandBuffer cmd, vk::Extent2D viewport) override {
@@ -99,7 +101,7 @@ class Test final : public ignis::IEngine {
 
             if (ImGui::Button("Load")) {
                 IGNIS_LOG("glTF", Debug, "Entered filename: " << filename);
-                m_models.emplace_back().load(filename, true);
+                m_models.emplace_back().loadAsync(filename);
                 filename[0] = '\0';
             }
 
@@ -121,16 +123,29 @@ class Test final : public ignis::IEngine {
 
         int i = 0;
 
-        for (auto& model : m_models) {
-            if (ImGui::TreeNode(model.getFileName().c_str())) {
+        for (auto it = m_models.begin(); it != m_models.end();) {
+            auto& model = *it;
+
+            if (ImGui::TreeNode(&model, "%s", model.getFileName().c_str())) {
                 if (model.isReady()) {
+                    if (ImGui::Button("Delete")) {
+                        getDevice().waitIdle();
+                        m_models.erase(it++);
+
+                        ImGui::TreePop();
+                        continue;
+                    }
+
                     model.renderUI();
                 }
 
                 ImGui::TreePop();
             }
-            i++;
+
+            it++;
         }
+
+
 
         ImGui::End();
 

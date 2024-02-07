@@ -16,6 +16,9 @@ class ResourceScope {
 
     std::list<std::function<void()>> m_deferredCleanupCommands;
 
+    ResourceScope(const ResourceScope& other) = delete;
+    ResourceScope& operator =(const ResourceScope& other) = delete;
+
 public:
     ResourceScope(std::string name = "");
     ~ResourceScope();
@@ -23,9 +26,7 @@ public:
     ResourceScope(ResourceScope&& other) = default;
     ResourceScope& operator =(ResourceScope&& other) = default;
 
-    ResourceScope(const ResourceScope& other) = delete;
-    ResourceScope& operator =(const ResourceScope& other) = delete;
-
+    void setName(std::string name) { m_name = name; }
     void addDeferredCleanupFunction(std::function<void()> func);
     void executeDeferredCleanupFunctions();
 };

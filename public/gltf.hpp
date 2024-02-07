@@ -31,7 +31,7 @@ class GLTFModel {
         alignas(16) glm::vec3 emissiveFactor;
         alignas(16) glm::vec4 baseColorFactor;
         alignas(16) float     metallicFactor;
-        alignas(16) float     roughnessFactor;
+                    float     roughnessFactor;
     };
 
     std::vector<DescriptorSetCollection> m_materials;
@@ -43,10 +43,12 @@ class GLTFModel {
 
     std::vector<std::vector<Instance>> m_instances;
 
+    ResourceScope m_localScope;
     std::array<ResourceScope, 5> m_oneFrameScopes;
 
     void updateInstances(uint32_t scene = 0) { updateInstances(m_model.scenes[scene]); }
     void updateInstances(gltf::Scene& scene);
+    void updateInstances(gltf::Node& node, const glm::mat4& parentMat = glm::mat4 { 1.f });
 
     /**
      * @brief Bind a vertex buffer by name
@@ -55,15 +57,17 @@ class GLTFModel {
      */
     bool bindBuffer(vk::CommandBuffer cmd, gltf::Primitive primitive, const char* name, uint32_t binding);
 
-    static constexpr std::vector<std::string> s_supportedExtensions {};
+    static constexpr std::array<const char*, 1> s_supportedExtensions {
+    //  "KHR_lights_punctual"
+    };
 
     bool extensionIsSupported(const std::string& extension);
 
     bool checkCompatibility();
-    bool setupBuffers(ResourceScope& scope);
-    bool setupImages(ResourceScope& scope);
-    bool setupSamplers(ResourceScope& scope);
-    bool setupMaterials(ResourceScope& scope);
+    bool setupBuffers();
+    bool setupImages();
+    bool setupSamplers();
+    bool setupMaterials();
 
 public:
     enum Status {
@@ -79,8 +83,9 @@ public:
 
     static bool setupStatics(ResourceScope& scope, vk::DescriptorSetLayout cameraUniformLayout);
 
-    bool load(const std::string& filename, bool async = false);
-    bool setup(ResourceScope& scope, vk::DescriptorSetLayout cameraUniformLayout);
+    bool load(const std::string& filename);
+    void loadAsync(const std::string& filename, bool* p_success = nullptr);
+    bool setup(vk::DescriptorSetLayout cameraUniformLayout);
     void draw(vk::CommandBuffer cmd, Camera& camera);
 
     Status status() const { return m_status; }

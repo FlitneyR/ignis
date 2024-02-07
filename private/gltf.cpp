@@ -14,16 +14,17 @@ vk::Pipeline            GLTFModel::s_backupPipeline = VK_NULL_HANDLE;
 Allocated<Image>        GLTFModel::s_nullImage      = {};
 vk::ImageView           GLTFModel::s_nullImageView  = VK_NULL_HANDLE;
 
-bool GLTFModel::load(const std::string& filename, bool async) {
+void GLTFModel::loadAsync(const std::string& filename, bool* p_success) {
     m_filename = filename;
 
-    if (async) {
-        std::thread([&, filename]() {
-            load(filename);
-        }).detach();
+    std::thread([&, filename, p_success]() {
+        bool success = load(filename);
+        if (p_success) *p_success = success;
+    }).detach();
+}
 
-        return true;
-    }
+bool GLTFModel::load(const std::string& filename) {
+    m_filename = filename;
 
     gltf::TinyGLTF loader;
     std::string error, warning;
@@ -77,14 +78,14 @@ bool GLTFModel::checkCompatibility() {
     return !anyMissingRequiredExtensions;
 }
 
-bool GLTFModel::setupBuffers(ResourceScope& scope) {
+bool GLTFModel::setupBuffers() {
     for (int i = 0; i < m_model.buffers.size(); i++) {
         auto bufferUsage = vk::BufferUsageFlagBits::eVertexBuffer
                          | vk::BufferUsageFlagBits::eIndexBuffer;
 
         auto allocationUsage = VMA_MEMORY_USAGE_CPU_TO_GPU;
 
-        auto bufferResult = BufferBuilder { scope }
+        auto bufferResult = BufferBuilder { m_localScope }
             .setBufferUsage(bufferUsage)
             .setAllocationUsage(allocationUsage)
             .setSizeBuildAndCopyData(m_model.buffers[i].data);
@@ -100,7 +101,7 @@ bool GLTFModel::setupBuffers(ResourceScope& scope) {
     return true;
 }
 
-bool GLTFModel::setupImages(ResourceScope& scope) {
+bool GLTFModel::setupImages() {
     // workout image formats
     std::vector<vk::Format> imageFormats(m_model.images.size(), vk::Format::eR8G8B8A8Unorm);
 
@@ -124,23 +125,23 @@ bool GLTFModel::setupImages(ResourceScope& scope) {
 
     for (int i = 0; i < m_model.images.size(); i++) {
         auto& image = m_model.images[i];
-        m_images.push_back(ImageBuilder { scope }
+        m_images.push_back(ImageBuilder { m_localScope }
             .setInitialLayout(vk::ImageLayout::eShaderReadOnlyOptimal)
             .setFormat(imageFormats[i])
             .load(&image.image[0], image.width, image.height));
 
-        m_imageViews.push_back(ImageViewBuilder { *m_images.back(), scope }
+        m_imageViews.push_back(ImageViewBuilder { *m_images.back(), m_localScope }
             .build());
     }
 
     return true;
 }
 
-bool GLTFModel::setupSamplers(ResourceScope& scope) {
+bool GLTFModel::setupSamplers() {
     vk::Device device = IEngine::get().getDevice();
 
     vk::Sampler defaultSampler = device.createSampler(vk::SamplerCreateInfo {});
-    scope.addDeferredCleanupFunction([=, sampler = defaultSampler]() {
+    m_localScope.addDeferredCleanupFunction([=, sampler = defaultSampler]() {
         device.destroySampler(sampler);
     });
     m_samplers.push_back(defaultSampler);
@@ -173,7 +174,7 @@ bool GLTFModel::setupSamplers(ResourceScope& scope) {
 
         m_samplers.push_back(device.createSampler(createInfo));
         
-        scope.addDeferredCleanupFunction([=, sampler = m_samplers.back()]() {
+        m_localScope.addDeferredCleanupFunction([=, sampler = m_samplers.back()]() {
             device.destroySampler(sampler);
         });
     }
@@ -181,16 +182,16 @@ bool GLTFModel::setupSamplers(ResourceScope& scope) {
     return true;
 }
 
-bool GLTFModel::setupMaterials(ResourceScope& scope) {
+bool GLTFModel::setupMaterials() {
     uint32_t materialCount = m_model.materials.size();
 
-    vk::DescriptorPool materialPool = DescriptorPoolBuilder { scope }
+    vk::DescriptorPool materialPool = DescriptorPoolBuilder { m_localScope }
         .setMaxSetCount(materialCount)
         .addPoolSize({ vk::DescriptorType::eCombinedImageSampler, 5 * materialCount })
         .build();
     
     for (auto& material : m_model.materials) {
-        m_materials.push_back(DescriptorSetBuilder { scope, materialPool }
+        m_materials.push_back(DescriptorSetBuilder { m_localScope, materialPool }
             .addLayouts(s_materialLayout)
             .build());
         
@@ -360,7 +361,7 @@ bool GLTFModel::setupStatics(ResourceScope& scope, vk::DescriptorSetLayout camer
     return true;
 }
 
-bool GLTFModel::setup(ResourceScope& scope, vk::DescriptorSetLayout cameraUniformLayout) {
+bool GLTFModel::setup(vk::DescriptorSetLayout cameraUniformLayout) {
     if (!s_pipeline) {
         IGNIS_LOG("glTF", Error, "Trying to setup glTF model before setting up glTF shared resources." <<
                                  "Call GLTFModel::setupPipelines() before setting up any models");
@@ -372,38 +373,59 @@ bool GLTFModel::setup(ResourceScope& scope, vk::DescriptorSetLayout cameraUnifor
     vk::Device device = IEngine::get().getDevice();
     
     for (auto& s : m_oneFrameScopes) 
-        scope.addDeferredCleanupFunction([&]() { s.executeDeferredCleanupFunctions(); });
+        m_localScope.addDeferredCleanupFunction([&]() { s.executeDeferredCleanupFunctions(); });
 
     bool success = true
         && checkCompatibility()
-        && setupBuffers(scope)
-        && setupImages(scope)
-        && setupSamplers(scope)
-        && setupMaterials(scope);
+        && setupBuffers()
+        && setupImages()
+        && setupSamplers()
+        && setupMaterials();
 
     m_status = success ? Ready : Failed;
 
     return success;
 }
 
+void GLTFModel::updateInstances(gltf::Node& node, const glm::mat4& parentMat) {
+    glm::vec3 translation;
+    glm::quat rotation;
+    glm::vec3 scale;
+
+    if (node.translation.size() == 0) node.translation = { 0.0, 0.0, 0.0 };
+    if (node.rotation.size() == 0) node.rotation = { 0.0, 0.0, 0.0, 1.0 };
+    if (node.scale.size() == 0) node.scale = { 1.0, 1.0, 1.0 };
+
+    translation.x = node.translation[0];
+    translation.y = node.translation[1];
+    translation.z = node.translation[2];
+    
+    rotation.x = node.rotation[0];
+    rotation.y = node.rotation[1];
+    rotation.z = node.rotation[2];
+    rotation.w = node.rotation[3];
+
+    scale.x = node.scale[0];
+    scale.y = node.scale[1];
+    scale.z = node.scale[2];
+
+    glm::mat4 mat = glm::translate(translation)
+                  * glm::mat4 { rotation }
+                  * glm::scale(scale);
+
+    mat = parentMat * mat;
+    if (node.mesh >= 0) m_instances[node.mesh].push_back({ mat });
+
+    for (int child : node.children)
+        updateInstances(m_model.nodes[child], mat);
+}
+
 void GLTFModel::updateInstances(gltf::Scene& scene) {
     m_instances.clear();
     m_instances.resize(m_model.meshes.size());
 
-    for (auto& nodeID : scene.nodes) {
-        auto& node = m_model.nodes[nodeID];
-
-        glm::mat4 mat { 1.f };
-
-        if (node.matrix.size() > 0) {
-            mat[0] = { node.matrix[ 0], node.matrix[ 1], node.matrix[ 2], node.matrix[ 3] };
-            mat[1] = { node.matrix[ 4], node.matrix[ 5], node.matrix[ 6], node.matrix[ 7] };
-            mat[2] = { node.matrix[ 8], node.matrix[ 9], node.matrix[10], node.matrix[11] };
-            mat[3] = { node.matrix[12], node.matrix[13], node.matrix[14], node.matrix[15] };
-        }
-
-        m_instances[node.mesh].push_back({ mat });
-    }
+    for (auto& nodeID : scene.nodes)
+        updateInstances(m_model.nodes[nodeID]);
 }
 
 bool GLTFModel::bindBuffer(vk::CommandBuffer cmd, gltf::Primitive primitive, const char* name, uint32_t binding) {
@@ -489,22 +511,32 @@ void GLTFModel::renderNodeUI(uint32_t nodeID) {
     
     renderNodeTransformUI(node);
 
-    if (ImGui::TreeNode("Materials")) {
-        for (auto& primitive : m_model.meshes[node.mesh].primitives)
-        if (ImGui::TreeNode(("Name: " + m_model.materials[primitive.material].name).c_str())) {
-            MaterialData& material = m_materialStructs[primitive.material];
+    if (node.light >= 0) {
+        gltf::Light& light = m_model.lights[node.light];
 
-            ImGui::DragFloat3("Base color factor", &material.baseColorFactor.x, 0.05f, 0.0f, 1.0f);
-            ImGui::DragFloat3("Emissive factor",   &material.emissiveFactor.x,  0.05f, 0.0f);
-            ImGui::DragFloat("Metallic factor",  &material.metallicFactor,  0.025f, 0.0f, 1.0f);
-            ImGui::DragFloat("Roughness factor", &material.roughnessFactor, 0.025f, 0.0f, 1.0f);
+        ImGui::Text("Light name: %s", light.name.c_str());
+    }
 
-            material.emissiveFactor = glm::max(material.emissiveFactor, 0.f);
+    if (node.mesh >= 0) {
+        ImGui::Text("Mesh name: %s", m_model.meshes[node.mesh].name.c_str());
 
+        if (ImGui::TreeNode("Materials")) {
+            for (gltf::Primitive& primitive : m_model.meshes[node.mesh].primitives)
+            if (ImGui::TreeNode(("Name: " + m_model.materials[primitive.material].name).c_str())) {
+                MaterialData& material = m_materialStructs[primitive.material];
+
+                ImGui::DragFloat4("Base color factor", &material.baseColorFactor.x, 0.05f, 0.0f, 1.0f);
+                ImGui::DragFloat3("Emissive factor",   &material.emissiveFactor.x,  0.05f, 0.0f);
+                ImGui::DragFloat("Metallic factor",  &material.metallicFactor,  0.025f, 0.0f, 1.0f);
+                ImGui::DragFloat("Roughness factor", &material.roughnessFactor, 0.025f, 0.0f, 1.0f);
+
+                material.emissiveFactor = glm::max(material.emissiveFactor, 0.f);
+
+                ImGui::TreePop();
+            }
+            
             ImGui::TreePop();
         }
-        
-        ImGui::TreePop();
     }
 
     for (auto& child : node.children)
@@ -544,21 +576,10 @@ void GLTFModel::renderNodeTransformUI(gltf::Node& node) {
     euler /= 180.f / glm::pi<float>();
 
     glm::quat rotation { euler };
-
-    glm::mat4 matrix = glm::translate(position)
-                     * glm::mat4 { rotation }
-                     * glm::scale(scale);
     
     node.translation = { position.x, position.y, position.z };
     node.scale       = { scale.x,    scale.y,    scale.z };
     node.rotation    = { rotation.x, rotation.y, rotation.z, rotation.w };
-
-    node.matrix = {
-        matrix[0][0], matrix[0][1], matrix[0][2], matrix[0][3],
-        matrix[1][0], matrix[1][1], matrix[1][2], matrix[1][3],
-        matrix[2][0], matrix[2][1], matrix[2][2], matrix[2][3],
-        matrix[3][0], matrix[3][1], matrix[3][2], matrix[3][3],
-    };
 }
 
 }
