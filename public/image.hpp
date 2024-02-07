@@ -78,9 +78,17 @@ public:
 
     ImageLayoutTransition transitionLayout(
         uint32_t baseMipLevel = 0,
-        uint32_t levelCount = 1,
+         int32_t levelCount = -1,
         uint32_t baseArrayLayer = 0,
-        uint32_t layerCount = 1);
+         int32_t layerCount = -1);
+    
+    /**
+     * @brief Fills the mip levels with a simple box blur mip chain
+     * 
+     * @param cmd Optional command buffer to create mip chain inside a command buffer.
+     *  If none is provided, this function executes synchronously
+     */
+    void generateMipMap(vk::CommandBuffer cmd = VK_NULL_HANDLE);
 
     vk::ImageLayout& layout(uint32_t mipLevel = 0, uint32_t arrayLayer = 0);
 };
@@ -100,6 +108,12 @@ public:
     VmaMemoryUsage        m_memoryUsage        = VMA_MEMORY_USAGE_GPU_ONLY;
     vk::ImageLayout       m_initialLayout      = vk::ImageLayout::eUndefined;
 
+    enum AutoMipMapMode {
+        None = 0,
+        Create,
+        Initialise
+    } m_autoMipMapMode = None;
+
     ImageBuilder(ResourceScope& scope);
 
     ImageBuilder& setMipLevelCount(uint32_t mipLevelCount);
@@ -114,6 +128,7 @@ public:
     ImageBuilder& setSize(glm::ivec3 size);
     ImageBuilder& setImageType(vk::ImageType type);
     ImageBuilder& setInitialLayout(vk::ImageLayout layout);
+    ImageBuilder& setAutoMipMapMode(AutoMipMapMode mode);
 
     Allocated<Image> build() override;
     Allocated<Image> load(const char* filename);

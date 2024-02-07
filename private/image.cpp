@@ -103,7 +103,10 @@ void ImageLayoutTransition::execute(vk::CommandBuffer cmd) {
     }
 }
 
-ImageLayoutTransition Image::transitionLayout(uint32_t baseMipLevel, uint32_t levelCount, uint32_t baseArrayLayer, uint32_t layerCount) {
+ImageLayoutTransition Image::transitionLayout(uint32_t baseMipLevel, int32_t levelCount, uint32_t baseArrayLayer, int32_t layerCount) {
+    levelCount = levelCount >= 0 ? levelCount : m_mipLevelCount;
+    layerCount = layerCount >= 0 ? layerCount : m_arrayLayerCount;
+
     return ImageLayoutTransition { *this }
         .setMipLevelRange(baseMipLevel, levelCount)
         .setArrayLayerRange(baseArrayLayer, layerCount)
@@ -126,6 +129,73 @@ Image::Image(
     m_mipLevelCount(mipLevelCount),
     m_imageLayouts(mipLevelCount * arrayLayerCount, initialLayout)
 {}
+
+void Image::generateMipMap(vk::CommandBuffer cmd) {
+    bool async = cmd != VK_NULL_HANDLE;
+
+    ResourceScope localScope;
+    auto& engine = IEngine::get();
+    vk::Device device = engine.getDevice();
+    vk::Fence fence;
+
+    if (!cmd) cmd = engine.beginOneTimeCommandBuffer(vkb::QueueType::graphics);
+    
+    if (!async) {
+        fence = device.createFence(vk::FenceCreateInfo {});
+        localScope.addDeferredCleanupFunction([=]() {
+            auto _ = device.waitForFences(fence, true, UINT64_MAX);
+            device.destroyFence(fence);
+        });
+    }
+
+    transitionLayout()
+        .setNewLayout(vk::ImageLayout::eTransferDstOptimal)
+        .setDstStageMask(vk::PipelineStageFlagBits::eTransfer)
+        .setDstAccessMask(vk::AccessFlagBits::eTransferWrite)
+        .execute(cmd);
+
+    glm::ivec2 srcImageSize { m_extent.width, m_extent.height };
+
+    for (int level = 0; level < m_mipLevelCount - 1; level++) {
+        transitionLayout(level, 1)
+            .setNewLayout(vk::ImageLayout::eTransferSrcOptimal)
+            .setSrcStageMask(vk::PipelineStageFlagBits::eTransfer)
+            .setDstStageMask(vk::PipelineStageFlagBits::eTransfer)
+            .setSrcAccessMask(vk::AccessFlagBits::eTransferWrite)
+            .setDstAccessMask(vk::AccessFlagBits::eTransferRead)
+            .execute(cmd);
+        
+        glm::ivec2 dstImageSize = srcImageSize / 2;
+        
+        cmd.blitImage(
+            m_image, vk::ImageLayout::eTransferSrcOptimal,
+            m_image, vk::ImageLayout::eTransferDstOptimal,
+            vk::ImageBlit {}
+                .setSrcSubresource(vk::ImageSubresourceLayers {}
+                    .setAspectMask(m_aspectMask)
+                    .setMipLevel(level)
+                    .setLayerCount(m_arrayLayerCount))
+                .setDstSubresource(vk::ImageSubresourceLayers {}
+                    .setAspectMask(m_aspectMask)
+                    .setMipLevel(level + 1)
+                    .setLayerCount(m_arrayLayerCount))
+                .setSrcOffsets({ vk::Offset3D { 0, 0, 0 }, { srcImageSize.x, srcImageSize.y, 1 } })
+                .setDstOffsets({ vk::Offset3D { 0, 0, 0 }, { dstImageSize.x, dstImageSize.y, 1 } }),
+            vk::Filter::eLinear
+        );
+
+        srcImageSize = dstImageSize;
+    }
+
+    // make sure we keep the last image in the same layout as the rest of the image
+    transitionLayout(m_mipLevelCount - 1, 1)
+        .setNewLayout(vk::ImageLayout::eTransferSrcOptimal)
+        .setDstStageMask(vk::PipelineStageFlagBits::eTransfer)
+        .setDstAccessMask(vk::AccessFlagBits::eTransferWrite)
+        .execute(cmd);
+
+    if (!async) engine.submitOneTimeCommandBuffer(cmd, vkb::QueueType::graphics, vk::SubmitInfo {}, fence);
+}
 
 vk::ImageLayout& Image::layout(uint32_t mipLevel, uint32_t arrayLayer) {
     return m_imageLayouts[mipLevel + arrayLayer * m_mipLevelCount];
@@ -198,7 +268,20 @@ ImageBuilder& ImageBuilder::setInitialLayout(vk::ImageLayout layout) {
     return *this;
 }
 
+ImageBuilder& ImageBuilder::setAutoMipMapMode(ImageBuilder::AutoMipMapMode mode) {
+    m_autoMipMapMode = mode;
+    return *this;
+}
+
 Allocated<Image> ImageBuilder::build() {
+    if (m_autoMipMapMode >= Create) {
+        uint32_t sideLength = std::max(m_extent.width, m_extent.height);
+        m_mipLevelCount = std::floor(std::log2(sideLength));
+    }
+
+    if (m_autoMipMapMode >= Initialise)
+        addUsage(vk::ImageUsageFlagBits::eTransferSrc | vk::ImageUsageFlagBits::eTransferDst);
+
     VkImageCreateInfo imageCreateInfo = vk::ImageCreateInfo {}
         .setMipLevels(m_mipLevelCount)
         .setArrayLayers(m_arrayLayerCount)
@@ -233,7 +316,7 @@ Allocated<Image> ImageBuilder::build() {
     }, allocation };
 
     if (m_initialLayout != vk::ImageLayout::eUndefined)
-        ret.m_inner.transitionLayout(0, m_mipLevelCount, 0, m_arrayLayerCount)
+        ret.m_inner.transitionLayout()
             .setNewLayout(m_initialLayout)
             .execute();
 
@@ -294,11 +377,16 @@ Allocated<Image> ImageBuilder::load(const void* data, uint32_t width, uint32_t h
             .setImageSubresource(vk::ImageSubresourceLayers {}
                 .setAspectMask(ret.m_inner.getAspectMask())
                 .setLayerCount(1)));
+
+    if (m_autoMipMapMode == Initialise)
+        ret.m_inner.generateMipMap(cmd);
     
     ret.m_inner.transitionLayout()
         .setNewLayout(m_initialLayout)
-        .setSrcAccessMask(vk::AccessFlagBits::eTransferWrite)
         .setSrcStageMask(vk::PipelineStageFlagBits::eTransfer)
+        .setSrcAccessMask(vk::AccessFlagBits::eTransferWrite)
+        .setDstStageMask(vk::PipelineStageFlagBits::eAllCommands)
+        .setDstAccessMask(vk::AccessFlagBits::eShaderRead)
         .execute(cmd);
 
     engine.submitOneTimeCommandBuffer(cmd, vkb::QueueType::graphics, vk::SubmitInfo {}, fence);
