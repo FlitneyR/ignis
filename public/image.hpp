@@ -76,11 +76,16 @@ public:
 
     vk::ImageAspectFlags getAspectMask() { return m_aspectMask; }
 
+    /**
+     * @brief Begins building a layout transition
+     * 
+     * @param levelCount if less than zero, defaults to all mip levels after baseMipLevel
+     * @param layerCount if less than zero, defaults to all array layers after baseArrayLayer
+     * @return ImageLayoutTransition 
+     */
     ImageLayoutTransition transitionLayout(
-        uint32_t baseMipLevel = 0,
-         int32_t levelCount = -1,
-        uint32_t baseArrayLayer = 0,
-         int32_t layerCount = -1);
+        uint32_t baseMipLevel = 0, int32_t levelCount = -1,
+        uint32_t baseArrayLayer = 0, int32_t layerCount = -1);
     
     /**
      * @brief Fills the mip levels with a simple box blur mip chain
@@ -88,7 +93,7 @@ public:
      * @param cmd Optional command buffer to create mip chain inside a command buffer.
      *  If none is provided, this function executes synchronously
      */
-    void generateMipMap(vk::CommandBuffer cmd = VK_NULL_HANDLE);
+    void generateMipMap(vk::CommandBuffer cmd = VK_NULL_HANDLE, uint32_t baseArrayLayer = 0, int32_t layerCount = -1);
 
     vk::ImageLayout& layout(uint32_t mipLevel = 0, uint32_t arrayLayer = 0);
 };

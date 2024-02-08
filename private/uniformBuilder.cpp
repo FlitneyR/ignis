@@ -1,4 +1,4 @@
-#include "descriptorSetBuilder.hpp"
+#include "uniformBuilder.hpp"
 #include "engine.hpp"
 
 namespace ignis {
@@ -67,27 +67,27 @@ vk::DescriptorSetLayout DescriptorLayoutBuilder::build() {
     return layout;
 }
 
-DescriptorSetBuilder& DescriptorSetBuilder::setPool(vk::DescriptorPool pool) {
+UniformBuilder& UniformBuilder::setPool(vk::DescriptorPool pool) {
     m_pool = pool;
     return *this;
 }
 
-DescriptorSetBuilder& DescriptorSetBuilder::setLayouts(std::vector<vk::DescriptorSetLayout> layouts) {
+UniformBuilder& UniformBuilder::setLayouts(std::vector<vk::DescriptorSetLayout> layouts) {
     m_layouts = layouts;
     return *this;
 }
 
-DescriptorSetBuilder& DescriptorSetBuilder::addLayouts(std::vector<vk::DescriptorSetLayout> layouts) {
+UniformBuilder& UniformBuilder::addLayouts(std::vector<vk::DescriptorSetLayout> layouts) {
     m_layouts.insert(m_layouts.end(), layouts.begin(), layouts.end());
     return *this;
 }
 
-DescriptorSetBuilder& DescriptorSetBuilder::addLayouts(vk::DescriptorSetLayout layout, uint32_t count) {
+UniformBuilder& UniformBuilder::addLayouts(vk::DescriptorSetLayout layout, uint32_t count) {
     m_layouts.insert(m_layouts.end(), count, layout);
     return *this;
 }
 
-DescriptorSetCollection DescriptorSetBuilder::build() {
+Uniform UniformBuilder::build() {
     return { getDevice().allocateDescriptorSets(vk::DescriptorSetAllocateInfo {}
         .setDescriptorPool(m_pool)
         .setSetLayouts(m_layouts)), m_layouts };

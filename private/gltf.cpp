@@ -1,17 +1,27 @@
 #include "gltf.hpp"
 #include "log.hpp"
 #include "bufferBuilder.hpp"
-#include "descriptorSetBuilder.hpp"
+#include "uniformBuilder.hpp"
 #include "engine.hpp"
 #include <thread>
 
 namespace ignis {
 
-PipelineData            GLTFModel::s_pipeline       = {};
-vk::DescriptorSetLayout GLTFModel::s_materialLayout = {};
-PipelineData            GLTFModel::s_backupPipeline = {};
-Allocated<Image>        GLTFModel::s_nullImage      = {};
-vk::ImageView           GLTFModel::s_nullImageView  = {};
+PipelineData            GLTFModel::s_pipeline         = {};
+PipelineData            GLTFModel::s_backupPipeline   = {};
+PipelineData            GLTFModel::s_lightingPipeline = {};
+vk::DescriptorSetLayout GLTFModel::s_materialLayout   = {};
+Allocated<Image>        GLTFModel::s_nullImage        = {};
+vk::ImageView           GLTFModel::s_nullImageView    = {};
+
+const std::map<std::string, GLTFModel::LightInstance::Type> GLTFModel::LightInstance::s_nameToType {
+    { "ambient", GLTFModel::LightInstance::Type::Ambient },
+    { "point", GLTFModel::LightInstance::Type::Point },
+    { "spot", GLTFModel::LightInstance::Type::Spot },
+    { "directional", GLTFModel::LightInstance::Type::Directional },
+};
+
+const std::vector<std::string> GLTFModel::LightInstance::s_typeToName { "ambient", "point", "spot", "directional" };
 
 void GLTFModel::loadAsync(const std::string& filename, bool* p_success) {
     m_filename = filename;
@@ -56,7 +66,8 @@ bool GLTFModel::load(const std::string& filename) {
 
 bool GLTFModel::extensionIsSupported(const std::string& extension) {
     for (auto& supportedExtension : s_supportedExtensions)
-        if (supportedExtension == extension) return true;
+        if (std::string(supportedExtension) == extension)
+            return true;
     
     return false;
 }
@@ -230,7 +241,7 @@ bool GLTFModel::setupMaterials() {
         .build();
     
     for (auto& material : m_model.materials) {
-        m_materials.push_back(DescriptorSetBuilder { m_localScope, materialPool }
+        m_materials.push_back(UniformBuilder { m_localScope, materialPool }
             .addLayouts(s_materialLayout)
             .build());
         
@@ -259,7 +270,7 @@ bool GLTFModel::setupMaterials() {
                 .setDstSet(m_materials.back().getSet())
                 .setDstBinding(binding)
                 .setImageInfo(imageInfos.back()));
-            
+        
             IEngine::get().getDevice().updateDescriptorSets(descriptorWrites.back(), {});
         }
 
@@ -326,12 +337,21 @@ bool GLTFModel::setupStatics(ResourceScope& scope, vk::DescriptorSetLayout camer
             .setStageFlags(vk::ShaderStageFlagBits::eAllGraphics))
         .build();
 
-    { // build default pipeline
-        auto pipelineBuilder = GraphicsPipelineBuilder { pipelineLayout, scope }
-            .addColorAttachmentFormat(IEngine::get().getVkbSwapchain().image_format)
-            .setDepthAttachmentFormat(IEngine::get().getDepthBuffer()->getFormat())
-            .addAttachmentBlendState()
+    auto gBufferPipelineBuilder = GraphicsPipelineBuilder { pipelineLayout, scope }
+            .setDepthAttachmentFormat(IEngine::get().getGBuffer().depthImage->getFormat())
             .setDepthStencilState()
+            .addColorAttachmentFormat(IEngine::get().getGBuffer().albedoImage->getFormat())
+            .addAttachmentBlendState()
+            .addColorAttachmentFormat(IEngine::get().getGBuffer().normalImage->getFormat())
+            .addAttachmentBlendState()
+            .addColorAttachmentFormat(IEngine::get().getGBuffer().emissiveImage->getFormat())
+            .addAttachmentBlendState()
+            .addColorAttachmentFormat(IEngine::get().getGBuffer().aoMetalRoughImage->getFormat())
+            .addAttachmentBlendState()
+            ;
+
+    { // build default pipeline
+        auto pipelineBuilder = GraphicsPipelineBuilder { gBufferPipelineBuilder }
             .addVertexAttribute<glm::vec3>(0, 0, 0) // POSITION
             .addVertexBinding<glm::vec3>(0)
             .addVertexAttribute<glm::vec2>(1, 1, 0) // TEXCOORD_0
@@ -348,7 +368,7 @@ bool GLTFModel::setupStatics(ResourceScope& scope, vk::DescriptorSetLayout camer
                 .addStageFromFile("shaders/gltf.vert.spv", "main", vk::ShaderStageFlagBits::eVertex)
                 .addStageFromFile("shaders/gltf.frag.spv", "main", vk::ShaderStageFlagBits::eFragment);
         } catch (std::runtime_error& e) {
-            IGNIS_LOG("glTF", Error, "Error while loading glTF shader: " << e.what());
+            IGNIS_LOG("glTF", Error, "Error while loading shader: " << e.what());
             return false;
         }
 
@@ -363,11 +383,7 @@ bool GLTFModel::setupStatics(ResourceScope& scope, vk::DescriptorSetLayout camer
     }
 
     { // build backup pipeline
-        auto pipelineBuilder = GraphicsPipelineBuilder { pipelineLayout, scope }
-            .addColorAttachmentFormat(IEngine::get().getVkbSwapchain().image_format)
-            .setDepthAttachmentFormat(IEngine::get().getDepthBuffer()->getFormat())
-            .addAttachmentBlendState()
-            .setDepthStencilState()
+        auto pipelineBuilder = GraphicsPipelineBuilder { gBufferPipelineBuilder }
             .addVertexAttribute<glm::vec3>(0, 0, 0) // POSITION
             .addVertexBinding<glm::vec3>(0)
             .addVertexAttribute<glm::vec2>(1, 1, 0) // TEXCOORD_0
@@ -382,18 +398,53 @@ bool GLTFModel::setupStatics(ResourceScope& scope, vk::DescriptorSetLayout camer
                 .addStageFromFile("shaders/gltf_backup.vert.spv", "main", vk::ShaderStageFlagBits::eVertex)
                 .addStageFromFile("shaders/gltf_backup.frag.spv", "main", vk::ShaderStageFlagBits::eFragment);
         } catch (std::runtime_error& e) {
-            IGNIS_LOG("glTF", Error, "Error while loading glTF shader: " << e.what());
+            IGNIS_LOG("glTF", Error, "Error while loading backup shader: " << e.what());
             return false;
         }
 
         auto pipelineResult = pipelineBuilder.build();
 
         if (pipelineResult.result != vk::Result::eSuccess) {
-            IGNIS_LOG("glTF", Error, "Failed to create pipeline: " << pipelineResult.result);
+            IGNIS_LOG("glTF", Error, "Failed to create backup pipeline: " << pipelineResult.result);
             return false;
         }
 
         s_backupPipeline = pipelineResult.value;
+    }
+
+    {   // build lighting pipeline
+        auto pipelineBuilder = GraphicsPipelineBuilder { scope }
+            .setPipelineLayout(PipelineLayoutBuilder { scope }
+                .addSet(cameraUniformLayout)
+                .addSet(IEngine::get().getGBuffer().uniform.getLayout())
+                .addPushConstantRange(vk::PushConstantRange {}
+                    .setSize(sizeof(LightInstance))
+                    .setStageFlags(vk::ShaderStageFlagBits::eFragment))
+                .build())
+            .addColorAttachmentFormat(IEngine::get().getGBuffer().emissiveImage->getFormat())
+            .addAttachmentBlendState(vk::PipelineColorBlendAttachmentState
+                { GraphicsPipelineBuilder::s_defaultAttachmentBlendState }
+                    .setDstAlphaBlendFactor(vk::BlendFactor::eOne)
+                    .setDstColorBlendFactor(vk::BlendFactor::eOne));
+        
+        try {
+            pipelineBuilder
+                .addStageFromFile("shaders/fullscreen.vert.spv", "main", vk::ShaderStageFlagBits::eVertex)
+                .addStageFromFile("shaders/light.frag.spv", "main", vk::ShaderStageFlagBits::eFragment);
+        } catch (std::runtime_error& e) {
+            IGNIS_LOG("glTF", Error, "Error while loading light shader: " << e.what());
+            return false;
+        }
+
+        auto pipelineResult = pipelineBuilder
+            .build();
+        
+        if (pipelineResult.result != vk::Result::eSuccess) {
+            IGNIS_LOG("glTF", Error, "Failed to create light shader");
+            return false;
+        }
+
+        s_lightingPipeline = pipelineResult.value;
     }
 
     return true;
@@ -422,6 +473,9 @@ bool GLTFModel::setup(vk::DescriptorSetLayout cameraUniformLayout) {
 
     m_status = success ? Ready : Failed;
 
+    if (success) { IGNIS_LOG("glTF", Info, "Finished setting up glTF model: " << m_filename); }
+    else         { IGNIS_LOG("glTF", Warning, "Failed to setup up glTF model: " << m_filename); }
+
     return success;
 }
 
@@ -447,11 +501,25 @@ void GLTFModel::updateInstances(gltf::Node& node, const glm::mat4& parentMat) {
     scale.y = node.scale[1];
     scale.z = node.scale[2];
 
-    glm::mat4 mat = glm::translate(translation)
+    glm::mat4 mat = parentMat
+                  * glm::translate(translation)
                   * glm::mat4 { rotation }
                   * glm::scale(scale);
 
-    mat = parentMat * mat;
+    if (node.light >= 0) {
+        gltf::Light& light = m_model.lights[node.light];
+        std::vector<double>& color = light.color;
+
+        LightInstance instance {
+            .position = mat[3],
+            .direction = mat[2],
+            .color = glm::vec<4, double> { color[0], color[1], color[2], light.intensity },
+        };
+
+        instance.setType(light.type);
+
+        m_lightInstances.push_back(instance);
+    }
     if (node.mesh >= 0) m_instances[node.mesh].push_back({ mat });
 
     for (int child : node.children)
@@ -459,6 +527,7 @@ void GLTFModel::updateInstances(gltf::Node& node, const glm::mat4& parentMat) {
 }
 
 void GLTFModel::updateInstances(gltf::Scene& scene) {
+    m_lightInstances.clear();
     m_instances.clear();
     m_instances.resize(m_model.meshes.size());
 
@@ -512,7 +581,7 @@ bool GLTFModel::bind(
     return true;
 }
 
-void GLTFModel::draw(vk::CommandBuffer cmd, ignis::Camera& camera) {
+void GLTFModel::draw(vk::CommandBuffer cmd, Camera& camera) {
     updateInstances();
 
     auto& oneFrameScope = m_oneFrameScopes[IEngine::get().getInFlightIndex()];
@@ -534,7 +603,7 @@ void GLTFModel::draw(vk::CommandBuffer cmd, ignis::Camera& camera) {
         instanceBuffers.push_back(bufferResult.value);
     }
 
-    vk::DescriptorSet cameraDescriptorSet = camera.m_descriptorSets.getSet(IEngine::get().getInFlightIndex());
+    vk::DescriptorSet cameraDescriptorSet = camera.uniform.getSet(IEngine::get().getInFlightIndex());
     
     for (int meshID = 0; meshID < m_model.meshes.size(); meshID++) {
         auto& mesh = m_model.meshes[meshID];
@@ -560,6 +629,22 @@ void GLTFModel::draw(vk::CommandBuffer cmd, ignis::Camera& camera) {
     }
 }
 
+void GLTFModel::drawLights(vk::CommandBuffer cmd, Camera& camera) {
+    cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, s_lightingPipeline.pipeline);
+
+    cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, s_lightingPipeline.layout, 0,
+        camera.uniform.getSet(), {});
+
+    cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, s_lightingPipeline.layout, 1,
+        IEngine::get().getGBuffer().uniform.getSet(), {});
+    
+    // draw ambient light
+    LightInstance { .color = { 1.0f, 1.0f, 1.0f, 0.05f } }.draw(cmd);
+
+    for (auto& lightInstance : m_lightInstances)
+        lightInstance.draw(cmd);
+}
+
 void GLTFModel::renderUI() {
     renderSceneUI();
 }
@@ -578,7 +663,21 @@ void GLTFModel::renderNodeUI(uint32_t nodeID) {
     if (node.light >= 0) {
         gltf::Light& light = m_model.lights[node.light];
 
-        ImGui::Text("Light name: %s", light.name.c_str());
+        if (ImGui::TreeNode(&node, "Light name: %s", light.name.c_str())) {
+            glm::vec3 color = glm::vec<3, double>(light.color[0], light.color[1], light.color[2]);
+            LightInstance::Type type = LightInstance::getType(light.type);
+            float intensity = light.intensity;
+
+            ImGui::Combo("Type", reinterpret_cast<int*>(&type), "Ambient\0Point\0Spot\0Directional");
+            ImGui::DragFloat3("Color", &color.x, 0.1f, 0.0f, 1.0f);
+            ImGui::DragFloat("Intensity", &intensity, 1.0f, 0.0f, FLT_MAX);
+
+            light.color = { color.r,  color.g,  color.b };
+            light.type = LightInstance::getTypeName(type);
+            light.intensity = intensity;
+
+            ImGui::TreePop();            
+        }
     }
 
     if (node.mesh >= 0) {
@@ -590,13 +689,9 @@ void GLTFModel::renderNodeUI(uint32_t nodeID) {
                 MaterialData& material = m_materialStructs[primitive.material];
 
                 ImGui::DragFloat4("Base color factor", &material.baseColorFactor.x, 0.05f, 0.0f, 1.0f);
-                ImGui::DragFloat3("Emissive factor",   &material.emissiveFactor.x,  0.05f);
-                ImGui::DragFloat("Metallic factor",  &material.metallicFactor,  0.025f);
-                ImGui::DragFloat("Roughness factor", &material.roughnessFactor, 0.025f);
-
-                material.emissiveFactor = glm::max(material.emissiveFactor, 0.f);
-                material.metallicFactor = glm::max(material.metallicFactor, 0.f);
-                material.roughnessFactor = glm::max(material.roughnessFactor, 0.f);
+                ImGui::DragFloat3("Emissive factor",   &material.emissiveFactor.x,  0.05f, 0.0f, 1000.0f);
+                ImGui::DragFloat("Metallic factor",  &material.metallicFactor,  0.025f, 0.0f, 1000.0f);
+                ImGui::DragFloat("Roughness factor", &material.roughnessFactor, 0.025f, 0.001f, 1000.0f);
 
                 ImGui::TreePop();
             }

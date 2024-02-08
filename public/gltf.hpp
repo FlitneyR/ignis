@@ -4,7 +4,7 @@
 #include "resourceScope.hpp"
 #include "pipelineBuilder.hpp"
 #include "allocated.hpp"
-#include "descriptorSet.hpp"
+#include "uniform.hpp"
 #include "image.hpp"
 #include "camera.hpp"
 
@@ -20,8 +20,10 @@ class GLTFModel {
     std::vector<vk::ImageView>         m_imageViews;
     std::vector<vk::Sampler>           m_samplers;
 
-    static PipelineData            s_pipeline;
-    static PipelineData            s_backupPipeline;
+    static PipelineData s_pipeline;
+    static PipelineData s_backupPipeline;
+    static PipelineData s_lightingPipeline;
+
     static vk::DescriptorSetLayout s_materialLayout;
     static Allocated<Image>        s_nullImage;
     static vk::ImageView           s_nullImageView;
@@ -33,10 +35,46 @@ class GLTFModel {
                     float     roughnessFactor;
     };
 
-    std::vector<DescriptorSetCollection> m_materials;
+    std::vector<Uniform> m_materials;
     std::vector<MaterialData> m_materialStructs;
 
     struct Instance { glm::mat4 transform; };
+
+    struct LightInstance {
+        enum Type : int {
+            Ambient = 0,
+            Point,
+            Spot,
+            Directional,
+        };
+
+                    Type      type      = Ambient;
+        alignas(16) glm::vec3 position  = glm::vec3 { 0.f };
+        alignas(16) glm::vec3 direction = glm::vec3 { 0.f };
+        alignas(16) glm::vec4 color     = glm::vec4 { 1.0f };
+
+        static const std::map<std::string, Type> s_nameToType;
+        static const std::vector<std::string> s_typeToName;
+
+        void setType(const std::string& typeName) { type = getType(typeName); }
+
+        void draw(vk::CommandBuffer cmd) {
+            cmd.pushConstants<LightInstance>(s_lightingPipeline.layout, vk::ShaderStageFlagBits::eFragment, 0, *this);
+            cmd.draw(3, 1, 0, 0);
+        }
+
+        static std::string getTypeName(const Type& type) {
+            return s_typeToName[type];
+        }
+
+        static Type getType(const std::string& typeName) {
+            auto it = s_nameToType.find(typeName);
+            if (it == s_nameToType.end()) return Type::Point;
+            return it->second;
+        }
+    };
+
+    std::vector<LightInstance> m_lightInstances;
 
     std::vector<std::vector<Instance>> m_instances;
 
@@ -69,7 +107,7 @@ class GLTFModel {
     bool bindBuffer(vk::CommandBuffer cmd, gltf::Primitive primitive, const char* name, uint32_t binding);
 
     static constexpr std::array<const char*, 1> s_supportedExtensions {
-    //  "KHR_lights_punctual"
+        "KHR_lights_punctual"
     };
 
     bool extensionIsSupported(const std::string& extension);
@@ -92,12 +130,14 @@ public:
     GLTFModel(GLTFModel&& other) = default;
     GLTFModel& operator =(GLTFModel&& other) = default;
 
-    static bool setupStatics(ResourceScope& scope, vk::DescriptorSetLayout cameraUniformLayout);
+    static bool setupStatics(ResourceScope& scope, vk::DescriptorSetLayout cameraDescriptorSetLayout);
 
     bool load(const std::string& filename);
     void loadAsync(const std::string& filename, bool* p_success = nullptr);
-    bool setup(vk::DescriptorSetLayout cameraUniformLayout);
+    bool setup(vk::DescriptorSetLayout cameraDescriptorSetLayout);
+
     void draw(vk::CommandBuffer cmd, Camera& camera);
+    void drawLights(vk::CommandBuffer cmd, Camera& camera);
 
     Status status() const { return m_status; }
 

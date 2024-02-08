@@ -132,8 +132,7 @@ GraphicsPipelineBuilder::GraphicsPipelineBuilder(
 }
 
 GraphicsPipelineBuilder& GraphicsPipelineBuilder::useDefaults() {
-    m_dynamicStates = {};
-    m_dynamicStates.push_back(vk::DynamicState::eViewport);
+    m_dynamicStates = { vk::DynamicState::eViewport, vk::DynamicState::eScissor };
     m_dynamicState = vk::PipelineDynamicStateCreateInfo {};
     
     m_vertexInputState = vk::PipelineVertexInputStateCreateInfo {};
@@ -159,8 +158,8 @@ GraphicsPipelineBuilder& GraphicsPipelineBuilder::useDefaults() {
     m_attachmentBlendStates = {};
     m_colorBlendState = vk::PipelineColorBlendStateCreateInfo {};
 
-    m_viewports = { vk::Viewport {} };
-    m_scissors = { vk::Rect2D {} };
+    m_viewportCount = 1;
+    m_scissorCount = 1;
     m_viewportState = vk::PipelineViewportStateCreateInfo {};
 
     m_colorAttachmentFormats = {};
@@ -176,8 +175,8 @@ vk::ResultValue<PipelineData> GraphicsPipelineBuilder::build() {
         .setDynamicStates(m_dynamicStates);
 
     m_viewportState
-        .setViewports(m_viewports)
-        .setScissors(m_scissors);
+        .setViewportCount(m_viewportCount)
+        .setScissorCount(m_scissorCount);
     
     m_vertexInputState
         .setVertexAttributeDescriptions(m_vertexAttributes)
@@ -324,13 +323,13 @@ GraphicsPipelineBuilder& GraphicsPipelineBuilder::addAttachmentBlendState(vk::Pi
     return *this;
 }
 
-GraphicsPipelineBuilder& GraphicsPipelineBuilder::addScissor(vk::Rect2D scissor) {
-    m_scissors.push_back(scissor);
+GraphicsPipelineBuilder& GraphicsPipelineBuilder::setScissorCount(uint32_t count) {
+    m_scissorCount = count;
     return *this;
 }
 
-GraphicsPipelineBuilder& GraphicsPipelineBuilder::addViewport(vk::Viewport viewport) {
-    m_viewports.push_back(viewport);
+GraphicsPipelineBuilder& GraphicsPipelineBuilder::setViewportCount(uint32_t count) {
+    m_viewportCount = count;
     return *this;
 }
 

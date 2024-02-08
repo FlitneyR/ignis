@@ -49,8 +49,8 @@ add_library(engine
     private/image.cpp
     private/allocated.cpp
     private/builder.cpp
-    private/descriptorSet.cpp
-    private/descriptorSetBuilder.cpp
+    private/uniform.cpp
+    private/uniformBuilder.cpp
     private/log.cpp
     private/gltf.cpp
     private/camera.cpp

@@ -4,6 +4,7 @@
 #include "image.hpp"
 #include "resourceScope.hpp"
 #include "log.hpp"
+#include "uniform.hpp"
 
 #include <chrono>
 
@@ -41,7 +42,25 @@ public:
     vk::SwapchainKHR   getSwapchain()      const { return { m_swapchain }; }
     uint32_t           getInFlightIndex()  const { return m_inFlightFrameIndex; }
     ImGuiContext*      getImGuiContext()   const { return m_imGuiContext; }
-    Allocated<Image>&  getDepthBuffer()          { return m_depthImage; }
+    Allocated<Image>&  getDepthBuffer()          { return getGBuffer().depthImage; }
+
+    struct GBuffer {
+        Uniform uniform;
+        
+        Allocated<Image> depthImage;
+        Allocated<Image> albedoImage;
+        Allocated<Image> normalImage;
+        Allocated<Image> emissiveImage;
+        Allocated<Image> aoMetalRoughImage;
+
+        vk::ImageView depthImageView;
+        vk::ImageView albedoImageView;
+        vk::ImageView normalImageView;
+        vk::ImageView emissiveImageView;
+        vk::ImageView aoMetalRoughImageView;
+    } m_gBuffer;
+
+    GBuffer& getGBuffer() { return m_gBuffer; }
 
     vk::Queue       getQueue(vkb::QueueType queueType) const;
     uint32_t        getQueueIndex(vkb::QueueType queueType) const;
@@ -79,8 +98,11 @@ protected:
     virtual void setup() {};
     virtual void drawUI() {};
     virtual void update() {};
-    virtual void recordDrawCommands(vk::CommandBuffer cmd, vk::Extent2D viewport) {};
     virtual void onWindowSizeChanged(glm::vec<2, uint32_t> size) {}
+
+    virtual void recordGBufferCommands(vk::CommandBuffer cmd, vk::Extent2D viewport) {};
+    virtual void recordLightingCommands(vk::CommandBuffer cmd, vk::Extent2D viewport) {};
+    virtual void recordPostProcessingCommands(vk::CommandBuffer cmd, vk::Extent2D viewport) {};
 
 private:
     static IEngine* s_singleton;
@@ -111,8 +133,6 @@ private:
     vkb::Swapchain      m_swapchain;
     VkSurfaceKHR        m_surface;
 
-    Allocated<Image>           m_depthImage;
-    vk::ImageView              m_depthImageView;
     std::vector<Image>         m_swapchainImages;
     std::vector<vk::ImageView> m_swapchainImageViews;
 

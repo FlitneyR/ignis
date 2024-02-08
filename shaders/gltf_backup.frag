@@ -2,12 +2,14 @@
 
 #include "pbr.glsl"
 
-layout (location = 0) out vec4 f_color;
+layout (location = 0) out vec4 f_albedo;
+layout (location = 1) out vec4 f_normal;
+layout (location = 2) out vec4 f_emissive;
+layout (location = 3) out vec4 f_aoRoughMetal;
 
-layout (location = 0) in vec3 i_campos;
-layout (location = 1) in vec2 i_uv;
-layout (location = 2) in vec4 i_position;
-layout (location = 3) in vec3 i_normal;
+layout (location = 0) in vec2 i_uv;
+layout (location = 1) in vec4 i_position;
+layout (location = 2) in vec3 i_normal;
 
 layout (set = 0, binding = 0) uniform Camera {
     mat4 view;
@@ -26,25 +28,18 @@ layout ( push_constant ) uniform Material {
     float roughnessFactor;
 } material;
 
-const vec3 lightCol =           vec3(5.0);
-const vec3 lightDir = normalize(vec3(0.0, 0.0, 1.0));
-const vec3 ambient  =           vec3(0.05);
-
 void main() {
-    float ao           = texture(t_ao, i_uv).r;
-    vec2  metalRough   = texture(t_metalRough, i_uv).gb;
-    vec4  albedo       = texture(t_albedo, i_uv) * material.baseColorFactor;
-    vec3  emissive     = texture(t_emissive, i_uv).rgb * material.emissiveFactor;
-    float metallic     = metalRough.g * material.metallicFactor;
-    float roughness    = metalRough.r * material.roughnessFactor;
-    vec3  viewDir      = normalize(i_campos - i_position.xyz);
-    vec3  normal       = i_normal;
+    float ao         = texture(t_ao, i_uv).r;
+    vec2  metalRough = texture(t_metalRough, i_uv).gb;
+    vec4  albedo     = texture(t_albedo, i_uv) * material.baseColorFactor;
+    vec3  emissive   = texture(t_emissive, i_uv).rgb * material.emissiveFactor;
 
-    f_color.rgb += cookTorranceBRDF(albedo.rgb, normal, viewDir, lightCol, lightDir, metallic, roughness, ao);
-    f_color.rgb += albedo.rgb * ambient;
-    f_color.rgb += emissive;
+    vec3  normal     = i_normal;
+    float metallic   = metalRough.g * material.metallicFactor;
+    float roughness  = metalRough.r * material.roughnessFactor;
 
-    f_color.rgb /= f_color.rgb + 1.0;
-
-    f_color.a = albedo.a;
+    f_albedo = albedo;
+    f_normal = vec4(normal, 1.0);
+    f_emissive = vec4(emissive, 1.0);
+    f_aoRoughMetal = vec4(ao, metallic, roughness, 1.0);
 }

@@ -104,8 +104,8 @@ void ImageLayoutTransition::execute(vk::CommandBuffer cmd) {
 }
 
 ImageLayoutTransition Image::transitionLayout(uint32_t baseMipLevel, int32_t levelCount, uint32_t baseArrayLayer, int32_t layerCount) {
-    levelCount = levelCount >= 0 ? levelCount : m_mipLevelCount;
-    layerCount = layerCount >= 0 ? layerCount : m_arrayLayerCount;
+    if (levelCount < 0) levelCount = m_mipLevelCount - baseMipLevel;
+    if (layerCount < 0) layerCount = m_arrayLayerCount - baseArrayLayer;
 
     return ImageLayoutTransition { *this }
         .setMipLevelRange(baseMipLevel, levelCount)
@@ -130,7 +130,9 @@ Image::Image(
     m_imageLayouts(mipLevelCount * arrayLayerCount, initialLayout)
 {}
 
-void Image::generateMipMap(vk::CommandBuffer cmd) {
+void Image::generateMipMap(vk::CommandBuffer cmd, uint32_t baseArrayLayer, int32_t layerCount) {
+    if (layerCount < 0) layerCount = m_arrayLayerCount - baseArrayLayer;
+
     bool async = cmd != VK_NULL_HANDLE;
 
     ResourceScope localScope;
@@ -324,23 +326,21 @@ Allocated<Image> ImageBuilder::build() {
 }
 
 Allocated<Image> ImageBuilder::load(const char* filename) {
-    ResourceScope tempScope { "ImageBuilder::load(" + std::string(filename) + ")" };
+    ResourceScope tempScope;
 
     int width, height, channels;
     void* data = stbi_load(filename, &width, &height, &channels, 4);
     tempScope.addDeferredCleanupFunction([=]() { stbi_image_free(data); });
 
     if (!data) throw std::runtime_error(std::string("Failed to open file") + std::string(filename));
-
     auto ret = load(data, width, height);
-
     IGNIS_LOG("Image", Info, "Loaded image file" << filename);
 
     return ret;
 }
 
 Allocated<Image> ImageBuilder::load(const void* data, uint32_t width, uint32_t height) {
-    ResourceScope tempScope { "ImageBuilder::load(bytes)" };
+    ResourceScope tempScope;
 
     setSize({ width, height, 1 });
     addUsage(vk::ImageUsageFlagBits::eTransferDst);

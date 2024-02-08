@@ -1,6 +1,6 @@
 #include "engine.hpp"
 #include "common.hpp"
-#include "descriptorSetBuilder.hpp"
+#include "uniformBuilder.hpp"
 #include <iostream>
 
 namespace ignis {
@@ -281,7 +281,7 @@ double IEngine::getTime() const {
     #undef SECONDS_BETWEEN
 }
 
-void IEngine::draw(vk::Rect2D viewport) {
+void IEngine::draw(vk::Rect2D gameViewRegion) {
     ImGui::Render();
 
     vk::Fence frameFinishedFence = m_frameFinishedFences[getInFlightIndex()];
@@ -312,17 +312,27 @@ void IEngine::draw(vk::Rect2D viewport) {
             .setDstAccessMask(vk::AccessFlagBits::eColorAttachmentWrite)
             .setNewLayout(vk::ImageLayout::eColorAttachmentOptimal)
             .execute(cmd);
-
-        auto colorAttachment = vk::RenderingAttachmentInfo {}
-            .setImageView(m_swapchainImageViews[imageIndex.value])
-            .setImageLayout(vk::ImageLayout::eColorAttachmentOptimal)
+        
+        auto attachment = vk::RenderingAttachmentInfo {}
             .setClearValue(vk::ClearValue {})
+            .setImageLayout(vk::ImageLayout::eColorAttachmentOptimal)
             .setStoreOp(vk::AttachmentStoreOp::eStore)
-            .setLoadOp(vk::AttachmentLoadOp::eClear)
-            ;
+            .setLoadOp(vk::AttachmentLoadOp::eClear);
+
+        auto emissiveAttachment = attachment.setImageView(m_gBuffer.emissiveImageView);
+
+        std::vector<vk::RenderingAttachmentInfo> gBufferAttachments {
+            attachment.setImageView(m_gBuffer.albedoImageView),
+            attachment.setImageView(m_gBuffer.normalImageView),
+            emissiveAttachment,
+            attachment.setImageView(m_gBuffer.aoMetalRoughImageView),
+        };
+
+        auto colorAttachment = vk::RenderingAttachmentInfo { attachment }
+            .setImageView(m_swapchainImageViews[imageIndex.value]);
 
         auto depthAttachment = vk::RenderingAttachmentInfo {}
-            .setImageView(m_depthImageView)
+            .setImageView(m_gBuffer.depthImageView)
             .setImageLayout(vk::ImageLayout::eDepthStencilAttachmentOptimal)
             .setClearValue(vk::ClearValue {}.setDepthStencil({ 1.0f }))
             .setStoreOp(vk::AttachmentStoreOp::eStore)
@@ -333,36 +343,136 @@ void IEngine::draw(vk::Rect2D viewport) {
         glfwGetFramebufferSize(m_window, &_windowSize.x, &_windowSize.y);
         glm::vec<2, uint32_t> windowSize = _windowSize;
 
-        cmd.beginRendering(vk::RenderingInfo {}
-            .setColorAttachments(colorAttachment)
-            .setPDepthAttachment(&depthAttachment)
-            .setLayerCount(1)
-            .setRenderArea({ { 0, 0 }, { windowSize.x, windowSize.y } }),
-            m_dispatchLoaderDynamic);
-
         cmd.setViewport(0, vk::Viewport {}
-            // .setX(0).setY(0)
-            // .setWidth(windowSize.x).setHeight(windowSize.y)
-            .setX(viewport.offset.x)
-            .setY(viewport.offset.y)
-            .setWidth(viewport.extent.width)
-            .setHeight(viewport.extent.height)
+            .setX(0).setY(0)
+            .setWidth(windowSize.x)
+            .setHeight(windowSize.y)
             .setMinDepth(0).setMaxDepth(1));
         
-        recordDrawCommands(cmd, viewport.extent);
-        
-        cmd.endRendering(m_dispatchLoaderDynamic);
+        cmd.setScissor(0, vk::Rect2D {}
+            .setOffset({ 0, 0 })
+            .setExtent({ windowSize.x, windowSize.y }));
 
-        cmd.beginRendering(vk::RenderingInfo {}
-            .setColorAttachments(colorAttachment.setLoadOp(vk::AttachmentLoadOp::eLoad))
-            .setLayerCount(1)
-            .setRenderArea({ { 0, 0 }, { windowSize.x, windowSize.y } }),
-            m_dispatchLoaderDynamic);
-        
-        ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), cmd);
-        
-        cmd.endRendering(m_dispatchLoaderDynamic);
+        { // render GBuffer
+            m_gBuffer.depthImage->transitionLayout()
+                .setNewLayout(vk::ImageLayout::eDepthStencilAttachmentOptimal)
+                .setDstStageMask(vk::PipelineStageFlagBits::eEarlyFragmentTests
+                               | vk::PipelineStageFlagBits::eLateFragmentTests)
+                .setDstAccessMask(vk::AccessFlagBits::eDepthStencilAttachmentWrite)
+                .execute(cmd);
+            m_gBuffer.albedoImage->transitionLayout()
+                .setNewLayout(vk::ImageLayout::eColorAttachmentOptimal)
+                .setDstStageMask(vk::PipelineStageFlagBits::eColorAttachmentOutput)
+                .setDstAccessMask(vk::AccessFlagBits::eColorAttachmentWrite)
+                .execute(cmd);
+            m_gBuffer.normalImage->transitionLayout()
+                .setNewLayout(vk::ImageLayout::eColorAttachmentOptimal)
+                .setDstStageMask(vk::PipelineStageFlagBits::eColorAttachmentOutput)
+                .setDstAccessMask(vk::AccessFlagBits::eColorAttachmentWrite)
+                .execute(cmd);
+            m_gBuffer.emissiveImage->transitionLayout()
+                .setNewLayout(vk::ImageLayout::eColorAttachmentOptimal)
+                .setDstStageMask(vk::PipelineStageFlagBits::eColorAttachmentOutput)
+                .setDstAccessMask(vk::AccessFlagBits::eColorAttachmentWrite)
+                .execute(cmd);
+            m_gBuffer.aoMetalRoughImage->transitionLayout()
+                .setNewLayout(vk::ImageLayout::eColorAttachmentOptimal)
+                .setDstStageMask(vk::PipelineStageFlagBits::eColorAttachmentOutput)
+                .setDstAccessMask(vk::AccessFlagBits::eColorAttachmentWrite)
+                .execute(cmd);
 
+            cmd.beginRendering(vk::RenderingInfo {}
+                .setColorAttachments(gBufferAttachments)
+                .setPDepthAttachment(&depthAttachment)
+                .setLayerCount(1)
+                .setRenderArea({ { 0, 0 }, { windowSize.x, windowSize.y } }),
+                m_dispatchLoaderDynamic);
+            
+            recordGBufferCommands(cmd, gameViewRegion.extent);
+            
+            cmd.endRendering(m_dispatchLoaderDynamic);
+        }
+
+        { // render lighting to emissive
+            m_gBuffer.depthImage->transitionLayout()
+                .setNewLayout(vk::ImageLayout::eShaderReadOnlyOptimal)
+                .setSrcStageMask(vk::PipelineStageFlagBits::eEarlyFragmentTests
+                               | vk::PipelineStageFlagBits::eLateFragmentTests)
+                .setSrcAccessMask(vk::AccessFlagBits::eDepthStencilAttachmentWrite)
+                .setDstStageMask(vk::PipelineStageFlagBits::eFragmentShader)
+                .setDstAccessMask(vk::AccessFlagBits::eShaderRead)
+                .execute(cmd);
+            m_gBuffer.albedoImage->transitionLayout()
+                .setNewLayout(vk::ImageLayout::eShaderReadOnlyOptimal)
+                .setSrcStageMask(vk::PipelineStageFlagBits::eColorAttachmentOutput)
+                .setSrcAccessMask(vk::AccessFlagBits::eColorAttachmentWrite)
+                .setDstStageMask(vk::PipelineStageFlagBits::eFragmentShader)
+                .setDstAccessMask(vk::AccessFlagBits::eShaderRead)
+                .execute(cmd);
+            m_gBuffer.normalImage->transitionLayout()
+                .setNewLayout(vk::ImageLayout::eShaderReadOnlyOptimal)
+                .setSrcStageMask(vk::PipelineStageFlagBits::eColorAttachmentOutput)
+                .setSrcAccessMask(vk::AccessFlagBits::eColorAttachmentWrite)
+                .setDstStageMask(vk::PipelineStageFlagBits::eFragmentShader)
+                .setDstAccessMask(vk::AccessFlagBits::eShaderRead)
+                .execute(cmd);
+            m_gBuffer.aoMetalRoughImage->transitionLayout()
+                .setNewLayout(vk::ImageLayout::eShaderReadOnlyOptimal)
+                .setSrcStageMask(vk::PipelineStageFlagBits::eColorAttachmentOutput)
+                .setSrcAccessMask(vk::AccessFlagBits::eColorAttachmentWrite)
+                .setDstStageMask(vk::PipelineStageFlagBits::eFragmentShader)
+                .setDstAccessMask(vk::AccessFlagBits::eShaderRead)
+                .execute(cmd);
+            
+            cmd.beginRendering(vk::RenderingInfo {}
+                .setColorAttachments(emissiveAttachment.setLoadOp(vk::AttachmentLoadOp::eLoad))
+                .setLayerCount(1)
+                .setRenderArea({ { 0, 0 }, { windowSize.x, windowSize.y } }),
+                m_dispatchLoaderDynamic);
+            
+            recordLightingCommands(cmd, gameViewRegion.extent);
+            
+            cmd.endRendering(m_dispatchLoaderDynamic);
+        }
+
+        cmd.setViewport(0, vk::Viewport {}
+            .setX(gameViewRegion.offset.x)
+            .setY(gameViewRegion.offset.y)
+            .setWidth(gameViewRegion.extent.width)
+            .setHeight(gameViewRegion.extent.height)
+            .setMinDepth(0).setMaxDepth(1));
+
+        { // render post processing
+            m_gBuffer.emissiveImage->transitionLayout()
+                .setNewLayout(vk::ImageLayout::eShaderReadOnlyOptimal)
+                .setSrcStageMask(vk::PipelineStageFlagBits::eColorAttachmentOutput)
+                .setSrcAccessMask(vk::AccessFlagBits::eColorAttachmentWrite)
+                .setDstStageMask(vk::PipelineStageFlagBits::eFragmentShader)
+                .setDstAccessMask(vk::AccessFlagBits::eShaderRead)
+                .execute(cmd);
+
+            cmd.beginRendering(vk::RenderingInfo {}
+                .setColorAttachments(colorAttachment)
+                .setLayerCount(1)
+                .setRenderArea({ { 0, 0 }, { windowSize.x, windowSize.y } }),
+                m_dispatchLoaderDynamic);
+            
+            recordPostProcessingCommands(cmd, gameViewRegion.extent);
+            
+            cmd.endRendering(m_dispatchLoaderDynamic);
+        }
+
+        { // render engine GUI
+            cmd.beginRendering(vk::RenderingInfo {}
+                .setColorAttachments(colorAttachment.setLoadOp(vk::AttachmentLoadOp::eLoad))
+                .setLayerCount(1)
+                .setRenderArea({ { 0, 0 }, { windowSize.x, windowSize.y } }),
+                m_dispatchLoaderDynamic);
+            
+            ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), cmd);
+            
+            cmd.endRendering(m_dispatchLoaderDynamic);
+        }
     }
     
     m_swapchainImages[imageIndex.value].transitionLayout()
@@ -437,17 +547,99 @@ void IEngine::windowSizeChanged() {
         m_swapchainImageViews.clear();
         m_swapchainImages.clear();
     });
-    
-    m_depthImage = ImageBuilder { scope }
-        .setSize(size)
-        .setFormat(vk::Format::eD32Sfloat)
-        .setUsage(vk::ImageUsageFlagBits::eDepthStencilAttachment)
-        .setAspectMask(vk::ImageAspectFlagBits::eDepth)
-        .setInitialLayout(vk::ImageLayout::eDepthStencilAttachmentOptimal)
-        .build();
 
-    m_depthImageView = ImageViewBuilder { *m_depthImage, scope }
-        .build();
+    {   // setup gBuffer images
+        auto imageBuilder = ImageBuilder { scope }
+            .setSize(size)
+            .setUsage(vk::ImageUsageFlagBits::eSampled);
+        
+        m_gBuffer.depthImage = ImageBuilder { imageBuilder }
+            .setFormat(vk::Format::eD32Sfloat)
+            .addUsage(vk::ImageUsageFlagBits::eDepthStencilAttachment)
+            .setAspectMask(vk::ImageAspectFlagBits::eDepth)
+            .setInitialLayout(vk::ImageLayout::eDepthStencilAttachmentOptimal)
+            .build();
+        
+        imageBuilder
+            .addUsage(vk::ImageUsageFlagBits::eColorAttachment)
+            .setAspectMask(vk::ImageAspectFlagBits::eColor)
+            .setInitialLayout(vk::ImageLayout::eColorAttachmentOptimal);
+        
+        m_gBuffer.albedoImage = ImageBuilder { imageBuilder }
+            .setFormat(vk::Format::eR8G8B8A8Srgb)
+            .build();
+        
+        m_gBuffer.normalImage = ImageBuilder { imageBuilder }
+            .setFormat(vk::Format::eR8G8B8A8Snorm)
+            .build();
+        
+        m_gBuffer.emissiveImage = ImageBuilder { imageBuilder }
+            .setFormat(vk::Format::eR16G16B16A16Sfloat)
+            .build();
+        
+        m_gBuffer.aoMetalRoughImage = ImageBuilder { imageBuilder }
+            .setFormat(vk::Format::eR8G8B8A8Unorm)
+            .build();
+    }
+
+    {   // setup gBuffer image views
+        m_gBuffer.depthImageView = ImageViewBuilder { *m_gBuffer.depthImage, scope }.build();
+        m_gBuffer.albedoImageView = ImageViewBuilder { *m_gBuffer.albedoImage, scope }.build();
+        m_gBuffer.normalImageView = ImageViewBuilder { *m_gBuffer.normalImage, scope }.build();
+        m_gBuffer.emissiveImageView = ImageViewBuilder { *m_gBuffer.emissiveImage, scope }.build();
+        m_gBuffer.aoMetalRoughImageView = ImageViewBuilder { *m_gBuffer.aoMetalRoughImage, scope }.build();
+    }
+
+    {   // setup gBuffer uniform set
+        auto binding = vk::DescriptorSetLayoutBinding {}
+                .setDescriptorCount(1)
+                .setDescriptorType(vk::DescriptorType::eCombinedImageSampler)
+                .setStageFlags(vk::ShaderStageFlagBits::eFragment);
+        
+        m_gBuffer.uniform = UniformBuilder { scope }
+            .setPool(DescriptorPoolBuilder { scope }
+                .setMaxSetCount(1)
+                .addPoolSize({ vk::DescriptorType::eCombinedImageSampler, 5 })
+                .build())
+            .addLayouts(DescriptorLayoutBuilder { scope }
+                .addBinding(binding.setBinding(0))
+                .addBinding(binding.setBinding(1))
+                .addBinding(binding.setBinding(2))
+                .addBinding(binding.setBinding(3))
+                .addBinding(binding.setBinding(4))
+                .build())
+            .build();
+
+        vk::Sampler sampler = getDevice().createSampler(vk::SamplerCreateInfo {});
+        scope.addDeferredCleanupFunction([device = getDevice(), sampler]() {
+            device.destroySampler(sampler);
+        });
+
+        auto imageInfo = vk::DescriptorImageInfo {}
+            .setImageLayout(vk::ImageLayout::eShaderReadOnlyOptimal)
+            .setSampler(sampler);
+        
+        std::vector<vk::DescriptorImageInfo> imageInfos {
+            imageInfo.setImageView(m_gBuffer.depthImageView),
+            imageInfo.setImageView(m_gBuffer.albedoImageView),
+            imageInfo.setImageView(m_gBuffer.normalImageView),
+            imageInfo.setImageView(m_gBuffer.emissiveImageView),
+            imageInfo.setImageView(m_gBuffer.aoMetalRoughImageView),
+        };
+
+        auto descSetWrite = vk::WriteDescriptorSet {}
+            .setDescriptorCount(1)
+            .setDescriptorType(vk::DescriptorType::eCombinedImageSampler)
+            .setDstSet(m_gBuffer.uniform.getSet(0));
+        
+        getDevice().updateDescriptorSets({
+            descSetWrite.setDstBinding(0).setImageInfo(imageInfos[0]),
+            descSetWrite.setDstBinding(1).setImageInfo(imageInfos[1]),
+            descSetWrite.setDstBinding(2).setImageInfo(imageInfos[2]),
+            descSetWrite.setDstBinding(3).setImageInfo(imageInfos[3]),
+            descSetWrite.setDstBinding(4).setImageInfo(imageInfos[4]),
+        }, {});
+    }
 
     onWindowSizeChanged(size);
 }

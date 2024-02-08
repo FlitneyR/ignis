@@ -2,7 +2,7 @@
 
 #include "libraries.hpp"
 #include "allocated.hpp"
-#include "descriptorSet.hpp"
+#include "uniform.hpp"
 #include "resourceScope.hpp"
 
 namespace ignis {
@@ -22,7 +22,7 @@ struct Camera {
     float fov = 45.f;
 
     std::vector<ignis::Allocated<vk::Buffer>> m_buffers;
-    ignis::DescriptorSetCollection            m_descriptorSets;
+    ignis::Uniform uniform;
 
     void setup(ResourceScope& scope);
     CameraUniform getUniformData(vk::Extent2D viewport);

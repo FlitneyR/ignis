@@ -1,6 +1,6 @@
 #include "libraries.hpp"
 #include "builder.hpp"
-#include "descriptorSet.hpp"
+#include "uniform.hpp"
 
 namespace ignis {
 
@@ -34,24 +34,24 @@ public:
     vk::DescriptorSetLayout build() override;
 };
 
-class DescriptorSetBuilder : public IBuilder<DescriptorSetCollection> {
+class UniformBuilder : public IBuilder<Uniform> {
     vk::DescriptorPool m_pool;
     std::vector<vk::DescriptorSetLayout> m_layouts;
 
 public:
-    DescriptorSetBuilder(
+    UniformBuilder(
         ResourceScope& scope,
         vk::DescriptorPool pool = {}
     ) : IBuilder(scope),
         m_pool(pool)
     {}
 
-    DescriptorSetBuilder& setPool(vk::DescriptorPool pool);
-    DescriptorSetBuilder& setLayouts(std::vector<vk::DescriptorSetLayout> layouts);
-    DescriptorSetBuilder& addLayouts(std::vector<vk::DescriptorSetLayout> layouts);
-    DescriptorSetBuilder& addLayouts(vk::DescriptorSetLayout layout, uint32_t count = 1);
+    UniformBuilder& setPool(vk::DescriptorPool pool);
+    UniformBuilder& setLayouts(std::vector<vk::DescriptorSetLayout> layouts);
+    UniformBuilder& addLayouts(std::vector<vk::DescriptorSetLayout> layouts);
+    UniformBuilder& addLayouts(vk::DescriptorSetLayout layout, uint32_t count = 1);
 
-    DescriptorSetCollection build() override;
+    Uniform build() override;
 };
 
 }

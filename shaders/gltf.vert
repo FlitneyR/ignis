@@ -6,12 +6,11 @@ layout (location = 2) in vec3 v_normal;
 layout (location = 3) in vec4 v_tangent;
 layout (location = 4) in mat4 v_transform;
 
-layout (location = 0) out vec3 o_campos;
-layout (location = 1) out vec2 o_uv;
-layout (location = 2) out vec4 o_position;
-layout (location = 3) out vec3 o_normal;
-layout (location = 4) out vec3 o_tangent;
-layout (location = 5) out vec3 o_bitangent;
+layout (location = 0) out vec2 o_uv;
+layout (location = 1) out vec4 o_position;
+layout (location = 2) out vec3 o_normal;
+layout (location = 3) out vec3 o_tangent;
+layout (location = 4) out vec3 o_bitangent;
 
 layout (set = 0, binding = 0) uniform Camera {
     mat4 view;
@@ -19,7 +18,6 @@ layout (set = 0, binding = 0) uniform Camera {
 } camera;
 
 void main() {
-    o_campos = inverse(camera.view)[3].xyz;
     o_uv = v_uv;
     o_position = v_transform * v_position;
     o_normal = normalize(mat3(v_transform) * v_normal);

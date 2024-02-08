@@ -71,10 +71,11 @@ public:
     vk::PipelineColorBlendStateCreateInfo                  m_colorBlendState        {};
     std::vector<vk::Format>                                m_colorAttachmentFormats {};
     vk::PipelineRenderingCreateInfoKHR                     m_renderingCreateInfo    {};
-    std::vector<vk::Rect2D>                                m_scissors               { vk::Rect2D {} };
-    std::vector<vk::Viewport>                              m_viewports              { vk::Viewport {} };
     vk::PipelineViewportStateCreateInfo                    m_viewportState          {};
     std::vector<vk::PipelineShaderStageCreateInfo>         m_stages                 {};
+
+    uint32_t m_viewportCount = 1;
+    uint32_t m_scissorCount  = 1;
 
     GraphicsPipelineBuilder(ResourceScope& scope);
     GraphicsPipelineBuilder(vk::PipelineLayout layout, ResourceScope& scope);
@@ -94,8 +95,8 @@ public:
     GraphicsPipelineBuilder& setTessellationState(std::optional<vk::PipelineTessellationStateCreateInfo> ts);
     GraphicsPipelineBuilder& setRasterizationState(vk::PipelineRasterizationStateCreateInfo rs);
     GraphicsPipelineBuilder& addAttachmentBlendState(vk::PipelineColorBlendAttachmentState abs = s_defaultAttachmentBlendState);
-    GraphicsPipelineBuilder& addScissor(vk::Rect2D scissor);
-    GraphicsPipelineBuilder& addViewport(vk::Viewport viewport);
+    GraphicsPipelineBuilder& setScissorCount(uint32_t count = 1);
+    GraphicsPipelineBuilder& setViewportCount(uint32_t count = 1);
     GraphicsPipelineBuilder& addStage(vk::PipelineShaderStageCreateInfo stage);
     GraphicsPipelineBuilder& addStageFromFile(const char* filename, const char* funcName, vk::ShaderStageFlagBits shaderStage);
     GraphicsPipelineBuilder& setRenderingCreateInfo(vk::PipelineRenderingCreateInfoKHR rci);

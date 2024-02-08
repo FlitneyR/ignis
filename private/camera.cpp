@@ -2,7 +2,7 @@
 #include "common.hpp"
 #include "engine.hpp"
 #include "bufferBuilder.hpp"
-#include "descriptorSetBuilder.hpp"
+#include "uniformBuilder.hpp"
 
 namespace ignis {
 
@@ -20,7 +20,7 @@ CameraUniform Camera::getUniformData(vk::Extent2D viewport) {
 }
 
 void Camera::setup(ResourceScope& scope) {
-    m_descriptorSets = ignis::DescriptorSetBuilder { scope }
+    uniform = ignis::UniformBuilder { scope }
         .setPool(ignis::DescriptorPoolBuilder { scope }
             .setMaxSetCount(IEngine::s_framesInFlight)
             .addPoolSize({ vk::DescriptorType::eUniformBuffer, IEngine::s_framesInFlight })
@@ -42,15 +42,9 @@ void Camera::setup(ResourceScope& scope) {
             .setSize<ignis::CameraUniform>(1)
             .build(), "Failed to create a camera uniform buffer"));
         
-        auto bufferInfo = vk::DescriptorBufferInfo {}
+        uniform.update(i, 0, vk::DescriptorType::eUniformBuffer, {}, vk::DescriptorBufferInfo {}
             .setBuffer(*m_buffers.back())
-            .setRange(sizeof(ignis::CameraUniform));
-
-        IEngine::get().getDevice().updateDescriptorSets(vk::WriteDescriptorSet {}
-            .setBufferInfo(bufferInfo)
-            .setDescriptorCount(1)
-            .setDescriptorType(vk::DescriptorType::eUniformBuffer)
-            .setDstSet(m_descriptorSets.getSet(i)), {});
+            .setRange(sizeof(ignis::CameraUniform)));
     }
 }
 

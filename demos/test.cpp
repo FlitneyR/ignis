@@ -4,7 +4,7 @@
 #include "allocated.hpp"
 #include "bufferBuilder.hpp"
 #include "common.hpp"
-#include "descriptorSetBuilder.hpp"
+#include "uniformBuilder.hpp"
 #include "gltf.hpp"
 #include "camera.hpp"
 
@@ -53,28 +53,52 @@ struct Instance : public IInstance<InstanceData> {
 class Test final : public ignis::IEngine {
     ignis::Camera m_camera;
 
-    std::list<ignis::GLTFModel> m_models;
+    ignis::PipelineData m_postProcessingPipeline;
+
+    ignis::GLTFModel m_model;
 
     void setup() override {
         m_camera.setup(getGlobalResourceScope());
 
-        ignis::GLTFModel::setupStatics(getGlobalResourceScope(), m_camera.m_descriptorSets.getLayout());
+        m_postProcessingPipeline = getValue(ignis::GraphicsPipelineBuilder { getGlobalResourceScope() }
+            .setPipelineLayout(ignis::PipelineLayoutBuilder { getGlobalResourceScope() }
+                .addSet(getGBuffer().uniform.getLayout())
+                .build())
+            .addColorAttachmentFormat(getVkbSwapchain().image_format)
+            .addAttachmentBlendState()
+            .addStageFromFile("shaders/fullscreen.vert.spv", "main", vk::ShaderStageFlagBits::eVertex)
+            .addStageFromFile("shaders/postProcessing.frag.spv", "main", vk::ShaderStageFlagBits::eFragment)
+            .build(), "Failed to build post processing pipeline");
 
-        getGlobalResourceScope().addDeferredCleanupFunction([&]() { m_models.clear(); });
+        ignis::GLTFModel::setupStatics(getGlobalResourceScope(), m_camera.uniform.getLayout());
+
+        getGlobalResourceScope().addDeferredCleanupFunction([&]() { m_model = {}; });
     }
 
     void update() override {
-        for (auto& model : m_models)
-        if (model.shouldSetup())
-            model.setup(m_camera.m_descriptorSets.getLayout());
+        if (m_model.shouldSetup())
+            m_model.setup(m_camera.uniform.getLayout());
     }
     
-    void recordDrawCommands(vk::CommandBuffer cmd, vk::Extent2D viewport) override {
+    void recordGBufferCommands(vk::CommandBuffer cmd, vk::Extent2D viewport) override {
         m_camera.m_buffers[getInFlightIndex()].copyData(m_camera.getUniformData(viewport));
 
-        for (auto& model : m_models)
-        if (model.isReady())
-            model.draw(cmd, m_camera);
+        if (m_model.isReady())
+            m_model.draw(cmd, m_camera);
+    }
+
+    void recordLightingCommands(vk::CommandBuffer cmd, vk::Extent2D viewport) override {
+        if (m_model.isReady())
+            m_model.drawLights(cmd, m_camera);
+    }
+
+    void recordPostProcessingCommands(vk::CommandBuffer cmd, vk::Extent2D viewport) override {
+        cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, m_postProcessingPipeline.pipeline);
+
+        cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, m_postProcessingPipeline.layout,
+            0, getGBuffer().uniform.getSet(), {});
+        
+        cmd.draw(3, 1, 0, 0);
     }
 
     void drawUI() override {
@@ -94,13 +118,14 @@ class Test final : public ignis::IEngine {
 
         ImGui::Begin("Scene");
         
-        if (ImGui::BeginMenu("Load model")) {
+        if (ImGui::BeginMenu("Load scene")) {
             static char filename[512] = "";
 
             ImGui::InputText("File name", filename, sizeof(filename));
 
             if (ImGui::Button("Load")) {
-                m_models.emplace_back().loadAsync(filename);
+                m_model = {};
+                m_model.loadAsync(filename);
                 filename[0] = '\0';
             }
 
@@ -122,29 +147,9 @@ class Test final : public ignis::IEngine {
 
         int i = 0;
 
-        for (auto it = m_models.begin(); it != m_models.end();) {
-            auto& model = *it;
-
-            if (ImGui::TreeNode(&model, "%s", model.getFileName().c_str())) {
-                if (model.isReady()) {
-                    if (ImGui::Button("Delete")) {
-                        getDevice().waitIdle();
-                        m_models.erase(it++);
-
-                        ImGui::TreePop();
-                        continue;
-                    }
-
-                    model.renderUI();
-                }
-
-                ImGui::TreePop();
-            }
-
-            it++;
+        if (m_model.isReady()) {
+            m_model.renderUI();
         }
-
-
 
         ImGui::End();
 
