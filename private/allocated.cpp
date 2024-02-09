@@ -44,7 +44,7 @@ vk::Result Allocated<vk::Buffer>::stagedCopyData(const void* data, uint32_t size
     bool async = fence != VK_NULL_HANDLE || signalSemaphore != VK_NULL_HANDLE;
 
     // using a pointer here so it can be deleted from another thread
-    ResourceScope* tempScope = new ResourceScope();
+    ResourceScope* tempScope = new ResourceScope("Allocated<vk::Buffer>::stagedCopyData");
     IEngine& engine = IEngine::get();
     vk::Device device = engine.getDevice();
 

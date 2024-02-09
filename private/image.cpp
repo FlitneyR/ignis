@@ -135,7 +135,7 @@ void Image::generateMipMap(vk::CommandBuffer cmd, uint32_t baseArrayLayer, int32
 
     bool async = cmd != VK_NULL_HANDLE;
 
-    ResourceScope localScope;
+    ResourceScope localScope { "Image::generateMipMap" };
     auto& engine = IEngine::get();
     vk::Device device = engine.getDevice();
     vk::Fence fence;
@@ -326,7 +326,7 @@ Allocated<Image> ImageBuilder::build() {
 }
 
 Allocated<Image> ImageBuilder::load(const char* filename) {
-    ResourceScope tempScope;
+    ResourceScope tempScope { "ImageBuilder::load("+std::string(filename)+")" };
 
     int width, height, channels;
     void* data = stbi_load(filename, &width, &height, &channels, 4);
@@ -340,7 +340,7 @@ Allocated<Image> ImageBuilder::load(const char* filename) {
 }
 
 Allocated<Image> ImageBuilder::load(const void* data, uint32_t width, uint32_t height) {
-    ResourceScope tempScope;
+    ResourceScope tempScope { "ImageBuilder::load(data, width, height)" };
 
     setSize({ width, height, 1 });
     addUsage(vk::ImageUsageFlagBits::eTransferDst);

@@ -93,7 +93,13 @@ class GLTFModel {
     std::vector<std::vector<BindingData>> m_bindingData;
 
     ResourceScope m_localScope;
-    std::array<ResourceScope, 5> m_oneFrameScopes;
+    std::array<ResourceScope, 5> m_oneFrameScopes {
+        ResourceScope { "GLTFModel oneFrameScope 0" },
+        ResourceScope { "GLTFModel oneFrameScope 1" },
+        ResourceScope { "GLTFModel oneFrameScope 2" },
+        ResourceScope { "GLTFModel oneFrameScope 3" },
+        ResourceScope { "GLTFModel oneFrameScope 4" },
+    };
 
     void updateInstances(uint32_t scene = 0) { updateInstances(m_model.scenes[scene]); }
     void updateInstances(gltf::Scene& scene);
