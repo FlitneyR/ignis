@@ -34,6 +34,7 @@ void Camera::setup(ResourceScope& scope) {
             .build(), IEngine::s_framesInFlight)
         .build();
 
+    std::vector<Uniform::Update> updates;
     for (int i = 0; i < IEngine::s_framesInFlight; i++) {
         m_buffers.push_back(getValue(ignis::BufferBuilder { scope }
             .addQueueFamilyIndices({ IEngine::get().getQueueIndex(vkb::QueueType::graphics) })
@@ -42,10 +43,12 @@ void Camera::setup(ResourceScope& scope) {
             .setSize<ignis::CameraUniform>(1)
             .build(), "Failed to create a camera uniform buffer"));
         
-        uniform.update(i, 0, vk::DescriptorType::eUniformBuffer, {}, vk::DescriptorBufferInfo {}
-            .setBuffer(*m_buffers.back())
-            .setRange(sizeof(ignis::CameraUniform)));
+        updates.push_back(uniform.update(vk::DescriptorType::eUniformBuffer, i, 0)
+            .addBufferInfo(vk::DescriptorBufferInfo {}
+                .setBuffer(*m_buffers.back())
+                .setRange(sizeof(CameraUniform))));
     }
+    Uniform::updateUniforms(updates);
 }
 
 }

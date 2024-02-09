@@ -55,7 +55,7 @@ class Test final : public ignis::IEngine {
 
     ignis::PipelineData m_postProcessingPipeline;
 
-    ignis::GLTFModel m_model;
+    ignis::GLTFModel *m_model;
 
     void setup() override {
         m_camera.setup(getGlobalResourceScope());
@@ -72,24 +72,27 @@ class Test final : public ignis::IEngine {
 
         ignis::GLTFModel::setupStatics(getGlobalResourceScope(), m_camera.uniform.getLayout());
 
-        getGlobalResourceScope().addDeferredCleanupFunction([&]() { m_model = {}; });
+        getGlobalResourceScope().addDeferredCleanupFunction([&]() { delete m_model; });
+
+        m_model = new ignis::GLTFModel();
+        m_model->loadAsync("../demos/assets/boomboxtest.glb");
     }
 
     void update() override {
-        if (m_model.shouldSetup())
-            m_model.setup(m_camera.uniform.getLayout());
+        if (m_model->shouldSetup())
+            m_model->setup(m_camera.uniform.getLayout());
     }
     
     void recordGBufferCommands(vk::CommandBuffer cmd, vk::Extent2D viewport) override {
         m_camera.m_buffers[getInFlightIndex()].copyData(m_camera.getUniformData(viewport));
 
-        if (m_model.isReady())
-            m_model.draw(cmd, m_camera);
+        if (m_model->isReady())
+            m_model->drawMeshes(cmd, m_camera);
     }
 
     void recordLightingCommands(vk::CommandBuffer cmd, vk::Extent2D viewport) override {
-        if (m_model.isReady())
-            m_model.drawLights(cmd, m_camera);
+        if (m_model->isReady())
+            m_model->drawLights(cmd, m_camera);
     }
 
     void recordPostProcessingCommands(vk::CommandBuffer cmd, vk::Extent2D viewport) override {
@@ -124,8 +127,9 @@ class Test final : public ignis::IEngine {
             ImGui::InputText("File name", filename, sizeof(filename));
 
             if (ImGui::Button("Load")) {
-                m_model = {};
-                m_model.loadAsync(filename);
+                delete m_model;
+                m_model = new ignis::GLTFModel();
+                m_model->loadAsync(filename);
                 filename[0] = '\0';
             }
 
@@ -147,8 +151,8 @@ class Test final : public ignis::IEngine {
 
         int i = 0;
 
-        if (m_model.isReady()) {
-            m_model.renderUI();
+        if (m_model->isReady()) {
+            m_model->renderUI();
         }
 
         ImGui::End();

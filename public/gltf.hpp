@@ -92,7 +92,7 @@ class GLTFModel {
 
     std::vector<std::vector<BindingData>> m_bindingData;
 
-    ResourceScope m_localScope;
+    ResourceScope m_localScope { "GLTFModel empty", true };
     std::array<ResourceScope, 5> m_oneFrameScopes {
         ResourceScope { "GLTFModel oneFrameScope 0" },
         ResourceScope { "GLTFModel oneFrameScope 1" },
@@ -136,13 +136,15 @@ public:
     GLTFModel(GLTFModel&& other) = default;
     GLTFModel& operator =(GLTFModel&& other) = default;
 
+    ~GLTFModel();
+
     static bool setupStatics(ResourceScope& scope, vk::DescriptorSetLayout cameraDescriptorSetLayout);
 
     bool load(const std::string& filename);
     void loadAsync(const std::string& filename, bool* p_success = nullptr);
     bool setup(vk::DescriptorSetLayout cameraDescriptorSetLayout);
 
-    void draw(vk::CommandBuffer cmd, Camera& camera);
+    void drawMeshes(vk::CommandBuffer cmd, Camera& camera);
     void drawLights(vk::CommandBuffer cmd, Camera& camera);
 
     Status status() const { return m_status; }
@@ -161,7 +163,7 @@ public:
     bool failed() const { return m_status == Failed; }
 
 private:
-    Status m_status;
+    Status m_status {};
     
 };
 

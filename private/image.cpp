@@ -326,7 +326,7 @@ Allocated<Image> ImageBuilder::build() {
 }
 
 Allocated<Image> ImageBuilder::load(const char* filename) {
-    ResourceScope tempScope { "ImageBuilder::load("+std::string(filename)+")" };
+    ResourceScope tempScope { "ImageBuilder::load("+std::string(filename)+")", true };
 
     int width, height, channels;
     void* data = stbi_load(filename, &width, &height, &channels, 4);

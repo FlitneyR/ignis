@@ -5,6 +5,7 @@
 #include <mutex>
 #include <list>
 
+// #define IGNIS_RESOURCE_SCOPE_DEBUG(...) printf(__VA_ARGS__)
 #ifndef IGNIS_RESOURCE_SCOPE_DEBUG
 #define IGNIS_RESOURCE_SCOPE_DEBUG(...)
 #endif
@@ -23,12 +24,13 @@ class ResourceScope {
     static int s_openScopes;
     static int s_nextID;
     int m_ID = -1;
+    bool m_shouldLog;
 
     ResourceScope(const ResourceScope& other) = delete;
     ResourceScope& operator =(const ResourceScope& other) = delete;
 
 public:
-    ResourceScope(std::string name = "");
+    ResourceScope(std::string name = "", bool shouldLog = false);
     ~ResourceScope();
 
     ResourceScope(ResourceScope&& other) {

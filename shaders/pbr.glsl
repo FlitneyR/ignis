@@ -47,7 +47,7 @@ vec3 cookTorranceBRDF(vec3 albedo, vec3 normal, vec3 viewDir, vec3 radiance, vec
 
     ao = clamp(ao, 0, 1);
     metallic = clamp(metallic, 0, 1);
-    roughness = clamp(roughness, 0.001, 1);
+    roughness = clamp(roughness, 0.1, 1);
 
     vec3 lambertionDiffuse = albedo / PI;
 

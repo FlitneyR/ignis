@@ -570,7 +570,7 @@ void IEngine::windowSizeChanged() {
             .build();
         
         m_gBuffer.normalImage = ImageBuilder { imageBuilder }
-            .setFormat(vk::Format::eR8G8B8A8Snorm)
+            .setFormat(vk::Format::eR16G16B16A16Snorm)
             .build();
         
         m_gBuffer.emissiveImage = ImageBuilder { imageBuilder }

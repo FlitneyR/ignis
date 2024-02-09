@@ -1,14 +1,20 @@
 #include "resourceScope.hpp"
 #include "engine.hpp"
 
+#ifndef RESOURCE_SCOPE_DEBUG
+#define RESOURCE_SCOPE_DEBUG(...)
+#endif
+
 namespace ignis {
 
 int ResourceScope::s_openScopes = 0;
 int ResourceScope::s_nextID = 0;
 
 ResourceScope::ResourceScope(
-    std::string name
-) : m_name(name)
+    std::string name,
+    bool shouldLog
+) : m_name(name),
+    m_shouldLog(shouldLog)
 {
     m_ID = s_nextID++;
     s_openScopes++;
@@ -26,8 +32,8 @@ void ResourceScope::addDeferredCleanupFunction(std::function<void()> func) {
 }
 
 void ResourceScope::executeDeferredCleanupFunctions() {
-    if (!m_name.empty())
-        IGNIS_LOG("Resource Scope", Info, "Cleaning up: " << m_name);
+    if (m_shouldLog)
+        IGNIS_LOG("Resource Scope", Info, "Cleaning up: " << m_name << " (id " << m_ID << ")");
 
     while (!m_deferredCleanupCommands.empty()) {
         m_deferredCleanupCommands.back()();

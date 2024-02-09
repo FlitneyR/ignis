@@ -23,6 +23,11 @@ const std::map<std::string, GLTFModel::LightInstance::Type> GLTFModel::LightInst
 
 const std::vector<std::string> GLTFModel::LightInstance::s_typeToName { "ambient", "point", "spot", "directional" };
 
+GLTFModel::~GLTFModel() {
+    IEngine::get().getDevice().waitIdle();
+    m_localScope.executeDeferredCleanupFunctions();
+}
+
 void GLTFModel::loadAsync(const std::string& filename, bool* p_success) {
     m_filename = filename;
 
@@ -253,26 +258,17 @@ bool GLTFModel::setupMaterials() {
             material.normalTexture.index
         };
         
-        std::vector<vk::DescriptorImageInfo> imageInfos;
-        std::vector<vk::WriteDescriptorSet> descriptorWrites;
-
+        std::vector<Uniform::Update> uniformUpdates;
         for (int binding = 0; binding < textureIDs.size(); binding++) {
             auto& texture = m_model.textures[textureIDs[binding]];
-
-            imageInfos.push_back(vk::DescriptorImageInfo {}
-                .setImageLayout(vk::ImageLayout::eShaderReadOnlyOptimal)
-                .setImageView(texture.source < 0 ? s_nullImageView : m_imageViews[texture.source])
-                .setSampler(m_samplers[std::min<uint32_t>(texture.sampler + 1, m_samplers.size() - 1)]));
             
-            descriptorWrites.push_back(vk::WriteDescriptorSet {}
-                .setDescriptorType(vk::DescriptorType::eCombinedImageSampler)
-                .setDescriptorCount(1)
-                .setDstSet(m_materials.back().getSet())
-                .setDstBinding(binding)
-                .setImageInfo(imageInfos.back()));
-        
-            IEngine::get().getDevice().updateDescriptorSets(descriptorWrites.back(), {});
+            uniformUpdates.push_back(m_materials.back().update(vk::DescriptorType::eCombinedImageSampler, 0, binding)
+                .addImageInfo(vk::DescriptorImageInfo {}
+                    .setImageLayout(vk::ImageLayout::eShaderReadOnlyOptimal)
+                    .setImageView(texture.source < 0 ? s_nullImageView : m_imageViews[texture.source])
+                    .setSampler(m_samplers[std::min<uint32_t>(texture.sampler + 1, m_samplers.size() - 1)])));
         }
+        Uniform::updateUniforms(uniformUpdates);
 
         m_materialStructs.push_back(MaterialData {
             .emissiveFactor = {
@@ -461,7 +457,7 @@ bool GLTFModel::setup(vk::DescriptorSetLayout cameraUniformLayout) {
 
     vk::Device device = IEngine::get().getDevice();
     
-    for (auto& s : m_oneFrameScopes) 
+    for (auto& s : m_oneFrameScopes)
         m_localScope.addDeferredCleanupFunction([&]() { s.executeDeferredCleanupFunctions(); });
 
     bool success = true
@@ -502,9 +498,9 @@ void GLTFModel::updateInstances(gltf::Node& node, const glm::mat4& parentMat) {
     scale.z = node.scale[2];
 
     glm::mat4 mat = parentMat
+                  * glm::scale(scale)
                   * glm::translate(translation)
-                  * glm::mat4 { rotation }
-                  * glm::scale(scale);
+                  * glm::mat4 { rotation };
 
     if (node.light >= 0) {
         gltf::Light& light = m_model.lights[node.light];
@@ -581,7 +577,7 @@ bool GLTFModel::bind(
     return true;
 }
 
-void GLTFModel::draw(vk::CommandBuffer cmd, Camera& camera) {
+void GLTFModel::drawMeshes(vk::CommandBuffer cmd, Camera& camera) {
     updateInstances();
 
     auto& oneFrameScope = m_oneFrameScopes[IEngine::get().getInFlightIndex()];
@@ -633,7 +629,7 @@ void GLTFModel::drawLights(vk::CommandBuffer cmd, Camera& camera) {
     cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, s_lightingPipeline.pipeline);
 
     cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, s_lightingPipeline.layout, 0,
-        camera.uniform.getSet(), {});
+        camera.uniform.getSet(IEngine::get().getInFlightIndex()), {});
 
     cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, s_lightingPipeline.layout, 1,
         IEngine::get().getGBuffer().uniform.getSet(), {});
