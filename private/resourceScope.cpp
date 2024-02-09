@@ -1,10 +1,6 @@
 #include "resourceScope.hpp"
 #include "engine.hpp"
 
-#ifndef IGNIS_RESOURCE_SCOPE_DEBUG
-#define IGNIS_RESOURCE_SCOPE_DEBUG(...)
-#endif
-
 namespace ignis {
 
 int ResourceScope::s_openScopes = 0;
