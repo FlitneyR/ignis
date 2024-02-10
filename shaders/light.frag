@@ -68,7 +68,7 @@ void main() {
     if (light.type == POINT_LIGHT || light.type == SPOT_LIGHT) {
         lightDir = position - light.position;
         float lightDist = length(lightDir);
-        radiance /= lightDist;
+        radiance /= lightDist * lightDist;
         lightDir = lightDir / lightDist;
     }
 

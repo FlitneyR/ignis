@@ -66,9 +66,10 @@ ImageLayoutTransition& ImageLayoutTransition::setAspectMask(vk::ImageAspectFlags
 void ImageLayoutTransition::execute(vk::CommandBuffer cmd) {
     bool async = cmd != VK_NULL_HANDLE;
 
-    if (cmd == VK_NULL_HANDLE) {
+    if (cmd == VK_NULL_HANDLE)
         cmd = IEngine::get().beginOneTimeCommandBuffer(vkb::QueueType::graphics);
-    }
+    
+    // assert(m_oldLayout != m_newLayout);
 
     cmd.pipelineBarrier(
         m_srcStageMask,
@@ -90,7 +91,7 @@ void ImageLayoutTransition::execute(vk::CommandBuffer cmd) {
 
     for (uint32_t mipLevel = mipLevelFrom; mipLevel < mipLevelTo; mipLevel++)
     for (uint32_t arrayLayer = arrayLayerFrom; arrayLayer < arrayLayerTo; arrayLayer++) {
-        r_image.layout(mipLevel, arrayLayer) = m_newLayout;
+        r_image.getLayout(mipLevel, arrayLayer) = m_newLayout;
     }
 
     if (!async) {
@@ -107,10 +108,16 @@ ImageLayoutTransition Image::transitionLayout(uint32_t baseMipLevel, int32_t lev
     if (levelCount < 0) levelCount = m_mipLevelCount - baseMipLevel;
     if (layerCount < 0) layerCount = m_arrayLayerCount - baseArrayLayer;
 
+    // this is useful for debugging, but will break unnecessarily if transitioning from vk::ImageLayout::eUndefined
+    // vk::ImageLayout _layout = layout(baseMipLevel, baseArrayLayer);
+    // for (int j = baseArrayLayer; j < baseArrayLayer + layerCount; j++)
+    // for (int i = baseMipLevel; i < baseMipLevel + levelCount; i++)
+    //     assert(layout(i, j) == _layout);
+
     return ImageLayoutTransition { *this }
         .setMipLevelRange(baseMipLevel, levelCount)
         .setArrayLayerRange(baseArrayLayer, layerCount)
-        .setOldLayout(layout(baseMipLevel, baseArrayLayer));
+        .setOldLayout(getLayout(baseMipLevel, baseArrayLayer));
 }
 
 Image::Image(
@@ -199,8 +206,25 @@ void Image::generateMipMap(vk::CommandBuffer cmd, uint32_t baseArrayLayer, int32
     if (!async) engine.submitOneTimeCommandBuffer(cmd, vkb::QueueType::graphics, vk::SubmitInfo {}, fence);
 }
 
-vk::ImageLayout& Image::layout(uint32_t mipLevel, uint32_t arrayLayer) {
+vk::ImageLayout& Image::getLayout(uint32_t mipLevel, uint32_t arrayLayer) {
     return m_imageLayouts[mipLevel + arrayLayer * m_mipLevelCount];
+}
+
+bool Image::layoutIs(vk::ImageLayout expected, uint32_t baseMipLevel, uint32_t levelCount, uint32_t baseArrayLayer, uint32_t layerCount) {
+    return getLayout(baseMipLevel, baseArrayLayer) == expected && layoutIsConsistent(baseMipLevel, levelCount, baseArrayLayer, layerCount);
+}
+
+bool Image::layoutIsConsistent(uint32_t baseMipLevel, uint32_t levelCount, uint32_t baseArrayLayer, uint32_t layerCount) {
+    if (levelCount <= 0) levelCount = m_mipLevelCount - baseMipLevel;
+    if (layerCount <= 0) layerCount = m_arrayLayerCount - baseArrayLayer;
+
+    vk::ImageLayout baseLayout = getLayout(baseMipLevel, baseArrayLayer);
+
+    for (uint32_t layer = baseArrayLayer; layer < baseArrayLayer + layerCount; layer++)
+    for (uint32_t level = baseMipLevel; level < baseMipLevel + levelCount; level++)
+        if (getLayout(level, layer) != baseLayout) return false;
+
+    return true;
 }
 
 ImageBuilder::ImageBuilder(
@@ -248,11 +272,11 @@ ImageBuilder& ImageBuilder::addQueueFamilyIndex(uint32_t index) {
     return *this;
 }
 
-ImageBuilder& ImageBuilder::setSize(glm::ivec2 size) {
+ImageBuilder& ImageBuilder::setSize(glm::uvec2 size) {
     return setSize({ size.x, size.y, 1 });
 }
 
-ImageBuilder& ImageBuilder::setSize(glm::ivec3 size) {
+ImageBuilder& ImageBuilder::setSize(glm::uvec3 size) {
     m_extent
         .setWidth(size.x)
         .setHeight(size.y)
@@ -406,7 +430,6 @@ ImageViewBuilder::ImageViewBuilder(
 {
     m_arrayLayerCount = image.getArrayLayerCount();
     m_mipLevelCount = image.getMipLevelCount();
-
     m_aspectMask = image.getAspectMask();
 }
 

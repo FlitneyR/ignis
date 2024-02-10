@@ -7,6 +7,7 @@
 #include "uniformBuilder.hpp"
 #include "gltf.hpp"
 #include "camera.hpp"
+#include "bloom.hpp"
 
 #include <thread>
 
@@ -53,29 +54,25 @@ struct Instance : public IInstance<InstanceData> {
 class Test final : public ignis::IEngine {
     ignis::Camera m_camera;
 
-    ignis::PipelineData m_postProcessingPipeline;
+    std::optional<ignis::GLTFModel> m_model;
 
-    ignis::GLTFModel *m_model;
+    bool m_bloomAvailable = false;
+    ignis::BloomPostProcess m_bloomPass;
 
     void setup() override {
         m_camera.setup(getGlobalResourceScope());
 
-        m_postProcessingPipeline = getValue(ignis::GraphicsPipelineBuilder { getGlobalResourceScope() }
-            .setPipelineLayout(ignis::PipelineLayoutBuilder { getGlobalResourceScope() }
-                .addSet(getGBuffer().uniform.getLayout())
-                .build())
-            .addColorAttachmentFormat(getVkbSwapchain().image_format)
-            .addAttachmentBlendState()
-            .addStageFromFile("shaders/fullscreen.vert.spv", "main", vk::ShaderStageFlagBits::eVertex)
-            .addStageFromFile("shaders/postProcessing.frag.spv", "main", vk::ShaderStageFlagBits::eFragment)
-            .build(), "Failed to build post processing pipeline");
-
         ignis::GLTFModel::setupStatics(getGlobalResourceScope(), m_camera.uniform.getLayout());
 
-        getGlobalResourceScope().addDeferredCleanupFunction([&]() { delete m_model; });
+        getGlobalResourceScope().addDeferredCleanupFunction([&]() { m_model = std::nullopt; });
 
-        m_model = new ignis::GLTFModel();
-        m_model->loadAsync("../demos/assets/boomboxtest.glb");
+        m_model = ignis::GLTFModel();
+        m_model->loadAsync("../demos/assets/BoomBoxTest.glb");
+    }
+
+    void onWindowSizeChanged(glm::vec<2, uint32_t> size) override {
+        m_bloomPass = {};
+        m_bloomAvailable = m_bloomPass.setup(getUntilWindowSizeChangeScope());
     }
 
     void update() override {
@@ -96,12 +93,7 @@ class Test final : public ignis::IEngine {
     }
 
     void recordPostProcessingCommands(vk::CommandBuffer cmd, vk::Extent2D viewport) override {
-        cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, m_postProcessingPipeline.pipeline);
-
-        cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, m_postProcessingPipeline.layout,
-            0, getGBuffer().uniform.getSet(), {});
-        
-        cmd.draw(3, 1, 0, 0);
+        m_bloomPass.draw(cmd);
     }
 
     void drawUI() override {
@@ -127,13 +119,20 @@ class Test final : public ignis::IEngine {
             ImGui::InputText("File name", filename, sizeof(filename));
 
             if (ImGui::Button("Load")) {
-                delete m_model;
-                m_model = new ignis::GLTFModel();
+                m_model = ignis::GLTFModel();
                 m_model->loadAsync(filename);
                 filename[0] = '\0';
             }
 
             ImGui::EndMenu();
+        }
+
+        if (ImGui::TreeNode("Bloom")) {
+            ImGui::DragFloat("Clipping", &m_bloomPass.clipping, 0.05f, 0.0f, FLT_MAX);
+            ImGui::DragFloat("Dispersion", &m_bloomPass.dispersion, 0.05f, 0.0f, FLT_MAX);
+            ImGui::DragFloat("Mixing", &m_bloomPass.mixing, 0.05f, 0.0f, 1.0f);
+            
+            ImGui::TreePop();
         }
 
         if (ImGui::TreeNode("Camera")) {

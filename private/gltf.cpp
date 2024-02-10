@@ -685,9 +685,9 @@ void GLTFModel::renderNodeUI(uint32_t nodeID) {
                 MaterialData& material = m_materialStructs[primitive.material];
 
                 ImGui::DragFloat4("Base color factor", &material.baseColorFactor.x, 0.05f, 0.0f, 1.0f);
-                ImGui::DragFloat3("Emissive factor",   &material.emissiveFactor.x,  0.05f, 0.0f, 1000.0f);
-                ImGui::DragFloat("Metallic factor",  &material.metallicFactor,  0.025f, 0.0f, 1000.0f);
-                ImGui::DragFloat("Roughness factor", &material.roughnessFactor, 0.025f, 0.001f, 1000.0f);
+                ImGui::DragFloat3("Emissive factor", &material.emissiveFactor.x, 0.05f, 0.0f, FLT_MAX);
+                ImGui::DragFloat("Metallic factor", &material.metallicFactor, 0.025f, 0.0f, FLT_MAX);
+                ImGui::DragFloat("Roughness factor", &material.roughnessFactor, 0.025f, 0.01f, FLT_MAX);
 
                 ImGui::TreePop();
             }

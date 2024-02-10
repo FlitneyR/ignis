@@ -1,6 +1,8 @@
 #include "engine.hpp"
 #include "common.hpp"
 #include "uniformBuilder.hpp"
+#include "pipelineBuilder.hpp"
+
 #include <iostream>
 
 namespace ignis {
@@ -255,6 +257,15 @@ void IEngine::init() {
         ImGui_ImplVulkan_Shutdown();
     });
 
+    m_postProcessingPipeline = getValue(GraphicsPipelineBuilder { getGlobalResourceScope() }
+        .setPipelineLayout(PipelineLayoutBuilder { getGlobalResourceScope() }
+            .addSet(getGBuffer().uniform.getLayout())
+            .build())
+        .addColorAttachmentFormat(getVkbSwapchain().image_format)
+        .addAttachmentBlendState()
+        .addStageFromFile("shaders/fullscreen.vert.spv", "main", vk::ShaderStageFlagBits::eVertex)
+        .addStageFromFile("shaders/postProcessing.frag.spv", "main", vk::ShaderStageFlagBits::eFragment)
+        .build(), "Failed to build post processing pipeline");
 }
 
 void IEngine::registerDeltaTime(double deltaTime) {
@@ -435,6 +446,8 @@ void IEngine::draw(vk::Rect2D gameViewRegion) {
             cmd.endRendering(m_dispatchLoaderDynamic);
         }
 
+        recordPostProcessingCommands(cmd, gameViewRegion.extent);
+
         cmd.setViewport(0, vk::Viewport {}
             .setX(gameViewRegion.offset.x)
             .setY(gameViewRegion.offset.y)
@@ -457,7 +470,12 @@ void IEngine::draw(vk::Rect2D gameViewRegion) {
                 .setRenderArea({ { 0, 0 }, { windowSize.x, windowSize.y } }),
                 m_dispatchLoaderDynamic);
             
-            recordPostProcessingCommands(cmd, gameViewRegion.extent);
+            cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, m_postProcessingPipeline.pipeline);
+
+            cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, m_postProcessingPipeline.layout,
+                0, getGBuffer().uniform.getSet(), {});
+            
+            cmd.draw(3, 1, 0, 0);
             
             cmd.endRendering(m_dispatchLoaderDynamic);
         }

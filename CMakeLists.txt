@@ -54,6 +54,7 @@ add_library(engine
     private/log.cpp
     private/gltf.cpp
     private/camera.cpp
+    private/bloom.cpp
     private/external/external_impl.cpp
 )
 

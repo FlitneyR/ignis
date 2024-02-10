@@ -34,9 +34,11 @@ layout ( push_constant ) uniform Material {
 void main() {
     mat3 TBN = mat3(i_tangent, i_bitangent, i_normal);
 
+    vec4 albedo = texture(t_albedo, i_uv) * material.baseColorFactor;
+    if (albedo.a < 0.5) discard;
+
     float ao         = texture(t_ao, i_uv).r;
     vec2  metalRough = texture(t_metalRough, i_uv).gb;
-    vec4  albedo     = texture(t_albedo, i_uv) * material.baseColorFactor;
     vec3  emissive   = texture(t_emissive, i_uv).rgb * material.emissiveFactor;
     vec3  _normal    = texture(t_normal, i_uv).rgb - 0.5;
     

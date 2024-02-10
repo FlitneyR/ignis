@@ -5,6 +5,7 @@
 #include "resourceScope.hpp"
 #include "log.hpp"
 #include "uniform.hpp"
+#include "pipelineBuilder.hpp"
 
 #include <chrono>
 
@@ -103,6 +104,8 @@ protected:
     virtual void recordGBufferCommands(vk::CommandBuffer cmd, vk::Extent2D viewport) {};
     virtual void recordLightingCommands(vk::CommandBuffer cmd, vk::Extent2D viewport) {};
     virtual void recordPostProcessingCommands(vk::CommandBuffer cmd, vk::Extent2D viewport) {};
+
+    PipelineData m_postProcessingPipeline;
 
 private:
     static IEngine* s_singleton;

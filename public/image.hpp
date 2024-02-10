@@ -71,8 +71,19 @@ public:
     vk::Format   getFormat()          { return m_format; }
     uint32_t     getMipLevelCount()   { return m_mipLevelCount; }
     uint32_t     getArrayLayerCount() { return m_arrayLayerCount; }
-    glm::ivec3   getSize()            { return { m_extent.width, m_extent.height, m_extent.depth };}
     vk::Extent3D getExtent()          { return m_extent; }
+
+    glm::uvec3 getSize(uint32_t mipLevel = 0) {
+        float scale = mipLevel > 0 ? glm::pow(0.5, mipLevel) : 1.0f;
+
+        assert(0.f < scale && scale <= 1.f);
+
+        return {
+            glm::max<glm::uint32>(1, glm::floor(m_extent.width * scale)),
+            glm::max<glm::uint32>(1, glm::floor(m_extent.height * scale)),
+            glm::max<glm::uint32>(1, glm::floor(m_extent.depth * scale))
+        };
+    }
 
     vk::ImageAspectFlags getAspectMask() { return m_aspectMask; }
 
@@ -95,7 +106,10 @@ public:
      */
     void generateMipMap(vk::CommandBuffer cmd = VK_NULL_HANDLE, uint32_t baseArrayLayer = 0, int32_t layerCount = -1);
 
-    vk::ImageLayout& layout(uint32_t mipLevel = 0, uint32_t arrayLayer = 0);
+    vk::ImageLayout& getLayout(uint32_t mipLevel = 0, uint32_t arrayLayer = 0);
+
+    bool layoutIs(vk::ImageLayout expected, uint32_t baseMipLevel = 0, uint32_t levelCount = 0, uint32_t baseArrayLayer = 0, uint32_t layerCount = 0);
+    bool layoutIsConsistent(uint32_t baseMipLevel = 0, uint32_t levelCount = 0, uint32_t baseArrayLayer = 0, uint32_t layerCount = 0);
 };
 
 class ImageBuilder : public IBuilder<Allocated<Image>> {
@@ -129,8 +143,8 @@ public:
     ImageBuilder& addUsage(vk::ImageUsageFlags usage);
     ImageBuilder& setQueueFamilyIndices(std::vector<uint32_t> indices);
     ImageBuilder& addQueueFamilyIndex(uint32_t index);
-    ImageBuilder& setSize(glm::ivec2 size);
-    ImageBuilder& setSize(glm::ivec3 size);
+    ImageBuilder& setSize(glm::uvec2 size);
+    ImageBuilder& setSize(glm::uvec3 size);
     ImageBuilder& setImageType(vk::ImageType type);
     ImageBuilder& setInitialLayout(vk::ImageLayout layout);
     ImageBuilder& setAutoMipMapMode(AutoMipMapMode mode);
