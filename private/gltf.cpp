@@ -189,20 +189,28 @@ bool GLTFModel::setupImages() {
             .build());
     }
 
+    std::thread([&]() { for (auto& image : m_model.images) image.image.clear(); }).detach();
+
     return true;
 }
 
 bool GLTFModel::setupSamplers() {
     vk::Device device = IEngine::get().getDevice();
 
-    vk::Sampler defaultSampler = device.createSampler(vk::SamplerCreateInfo {});
-    m_localScope.addDeferredCleanupFunction([=, sampler = defaultSampler]() {
-        device.destroySampler(sampler);
-    });
+    auto defaultSamplerCreateInfo = vk::SamplerCreateInfo {}
+        .setAddressModeU(vk::SamplerAddressMode::eRepeat)
+        .setAddressModeV(vk::SamplerAddressMode::eRepeat)
+        .setMinFilter(vk::Filter::eNearest)
+        .setMagFilter(vk::Filter::eNearest)
+        .setMipmapMode(vk::SamplerMipmapMode::eLinear);
+
+    vk::Sampler defaultSampler = device.createSampler(defaultSamplerCreateInfo);
     m_samplers.push_back(defaultSampler);
+    
+    m_localScope.addDeferredCleanupFunction([=]() { device.destroySampler(defaultSampler); });
 
     for (auto& sampler : m_model.samplers) {
-        auto createInfo = vk::SamplerCreateInfo {}
+        auto createInfo = vk::SamplerCreateInfo { defaultSamplerCreateInfo }
             .setMaxLod(VK_LOD_CLAMP_NONE);
 
         switch (sampler.wrapS) {

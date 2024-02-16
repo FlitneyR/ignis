@@ -50,7 +50,7 @@ class BloomPostProcess {
 
 public:
     float clipping   = 1.0f;
-    float dispersion = 0.2f;
+    float dispersion = 1.0f;
     float mixing     = 0.5f;
 
     bool setup(ResourceScope& scope);

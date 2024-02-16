@@ -36,19 +36,23 @@ void main() {
     }
 }
 
+float luminance(vec3 light) {
+    return dot(light, vec3(0.2126, 0.7152, 0.0722));
+}
+
 void filterPass() {
     f_output = textureLod(t_source, i_uv, pass.sourceMipLevel);
 
-    float luminance = length(f_output.rgb) - pass.clipping;
-
-    f_output.rbg = max(normalize(f_output.rgb) * luminance, vec3(0));
+    float luminance = luminance(f_output.rgb) - pass.clipping;
+    f_output.rgb = max(normalize(f_output.rgb) * luminance, vec3(0));
     f_output.a = 1;
 }
 
 void blurPass() {
     vec2 texelSize = pass.dispersion / textureSize(t_source, pass.sourceMipLevel);
+    const float samples = 16;
 
-    for (float f = -1.0; f <= 1.0; f += 0.25) {
+    for (float f = -1.0; f <= 1.0; f += 2 / (samples - 1)) {
         vec2 uv = i_uv + f * directions[pass.direction] * texelSize;
 
         f_output += exp(-3 * f * f) * texture(t_source, uv);

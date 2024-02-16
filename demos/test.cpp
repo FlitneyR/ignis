@@ -65,9 +65,6 @@ class Test final : public ignis::IEngine {
         ignis::GLTFModel::setupStatics(getGlobalResourceScope(), m_camera.uniform.getLayout());
 
         getGlobalResourceScope().addDeferredCleanupFunction([&]() { m_model = std::nullopt; });
-
-        m_model = ignis::GLTFModel();
-        m_model->loadAsync("../demos/assets/BoomBoxTest.glb");
     }
 
     void onWindowSizeChanged(glm::vec<2, uint32_t> size) override {
